@@ -79,6 +79,22 @@ class InferenceRequest(BaseModel):
     max_correction_s: int = 30
     leader_port: str = ""
     leader_config: str = ""
+    # Best-of-N (BoN) sampling at inference time. When enabled the rollout
+    # samples N perturbed action chunks per replan, scores them with the aim
+    # verifier and executes the best one's first k steps. Mutually exclusive
+    # with chunk_smooth / rtc / temporal ensembling.
+    bon_enabled: bool = False
+    bon_mode: str = "bon"  # bon | greedy | alternate
+    bon_n: int = 8
+    bon_sigma_scale: float = 0.15
+    bon_k: int = 15
+    bon_confirm_k: int = 10
+    bon_verifier: str = "aim"  # aim | off
+    bon_camera: str = "up"
+    bon_colors: str = "red"
+    bon_target_box: list[float] | None = None  # normalized [x1,y1,x2,y2]
+    bon_calibration_id: str = ""
+    bon_aim_repo: str = ""  # dataset holding meta/aim_calibration.json
 
 
 class TakeoverRequest(BaseModel):
@@ -419,6 +435,196 @@ def _read_takeover_state() -> dict[str, Any]:
     except (OSError, ValueError):
         return {}
     return state if isinstance(state, dict) else {}
+
+
+def _read_bon_state() -> dict[str, Any]:
+    try:
+        state = json.loads((_PREVIEW_DIR / "bon_state.json").read_text())
+    except (OSError, ValueError):
+        return {}
+    return state if isinstance(state, dict) else {}
+
+
+def handle_bon_config(cfg: dict[str, Any]) -> dict[str, Any]:
+    """Hot-update BoN params / target box in the running rollout subprocess."""
+    if not inference_active:
+        return {"success": False, "status_code": 409, "message": "No inference is active"}
+    try:
+        _PREVIEW_DIR.mkdir(parents=True, exist_ok=True)
+        (_PREVIEW_DIR / "bon_config.json").write_text(json.dumps(cfg))
+    except OSError as exc:
+        return {"success": False, "status_code": 500, "message": f"Failed to write BoN config: {exc}"}
+    return {"success": True, "message": "BoN config updated"}
+
+
+def handle_bon_candidates(repo_id: str, limit: int = 20) -> dict[str, Any]:
+    """Tail of the candidate log for the audit panel."""
+    root = _dataset_root_for(repo_id) if repo_id else _PREVIEW_DIR
+    path = root / "candidate_log.parquet"
+    if not path.exists():
+        return {"success": True, "rows": [], "path": str(path)}
+    try:
+        import pyarrow.parquet as pq
+
+        rows = pq.read_table(path).to_pylist()
+        return {"success": True, "rows": rows[-limit:], "path": str(path), "total": len(rows)}
+    except Exception as exc:
+        return {"success": False, "status_code": 500, "message": f"Failed to read candidate log: {exc}"}
+
+
+def handle_bon_labels(repo_id: str) -> dict[str, Any]:
+    root = _dataset_root_for(repo_id)
+    path = root / "meta" / "lelab_episode_labels.json"
+    try:
+        labels = json.loads(path.read_text()) if path.exists() else {}
+    except (OSError, ValueError):
+        labels = {}
+    success = sum(1 for v in labels.values() if v)
+    return {"success": True, "labels": labels, "success": success, "fail": len(labels) - success}
+
+
+_RETRAIN_STATE: dict[str, Any] = {"phase": "idle"}
+_RETRAIN_LOCK = threading.Lock()
+
+
+def handle_bon_retrain_status() -> dict[str, Any]:
+    with _RETRAIN_LOCK:
+        return dict(_RETRAIN_STATE)
+
+
+def handle_bon_retrain(job_id: str, capture_repo: str, target_repo_id: str = "") -> dict[str, Any]:
+    """Fold the flywheel capture set back into training: label → merge → resume.
+
+    Reuses the merge pipeline and the resume flow (clone the source job's
+    config, point it at the merged dataset, continue from its checkpoint).
+    """
+    from .dataset_merge import MergeRequest, handle_merge, handle_merge_status
+    from .dataset_repair import apply_episode_labels
+    from .jobs import JobTarget, job_registry
+
+    try:
+        original = job_registry.get(job_id)
+    except Exception:
+        return {"success": False, "status_code": 404, "message": f"任务 {job_id} 不存在"}
+    if original.runner not in ("ssh", "local"):
+        return {"success": False, "status_code": 400, "message": "回灌续训只支持 local / SSH 任务"}
+    base_repo = original.config.dataset_repo_id
+    if not base_repo:
+        return {"success": False, "status_code": 400, "message": "源任务没有训练数据集"}
+    if capture_repo == base_repo:
+        return {"success": False, "status_code": 400, "message": "采集数据集不能与训练数据集相同"}
+    with _RETRAIN_LOCK:
+        if _RETRAIN_STATE.get("phase") in ("merging", "starting"):
+            return {"success": False, "status_code": 409, "message": "已有回灌任务在跑"}
+
+    try:
+        labeled = apply_episode_labels(capture_repo)
+    except Exception as exc:
+        return {"success": False, "status_code": 500, "message": f"写入 success 标签失败: {exc}"}
+
+    if not target_repo_id:
+        user, _, base_name = base_repo.partition("/")
+        target_repo_id = f"{user}/{base_name}_flywheel_{time.strftime('%m%d_%H%M')}"
+    merge = handle_merge(
+        MergeRequest(sources=[base_repo, capture_repo], target_repo_id=target_repo_id)
+    )
+    if not merge.get("success"):
+        return merge
+
+    with _RETRAIN_LOCK:
+        _RETRAIN_STATE.clear()
+        _RETRAIN_STATE.update(
+            {
+                "phase": "merging",
+                "target": target_repo_id,
+                "source_job": job_id,
+                "labeled": labeled,
+                "started_at": time.time(),
+            }
+        )
+
+    def finish() -> None:
+        deadline = time.time() + 1800
+        st: dict[str, Any] = {}
+        while time.time() < deadline:
+            st = handle_merge_status()
+            if not st.get("running"):
+                break
+            time.sleep(2)
+        if st.get("running") or st.get("exit_code") != 0 or not st.get("target_exists"):
+            with _RETRAIN_LOCK:
+                _RETRAIN_STATE.update(
+                    {"phase": "error", "message": f"合并失败（exit={st.get('exit_code')}），见 {st.get('log_path')}"}
+                )
+            return
+        with _RETRAIN_LOCK:
+            _RETRAIN_STATE["phase"] = "starting"
+        try:
+            new_config = original.config.model_copy()
+            new_config.dataset_repo_id = target_repo_id
+            new_config.resume = True
+            new_config.resume_from_job_id = job_id
+            record = job_registry.start(
+                new_config, JobTarget(runner=original.runner, ssh_config_id=original.ssh_config_id)
+            )
+            with _RETRAIN_LOCK:
+                _RETRAIN_STATE.update({"phase": "done", "job_id": record.id})
+        except Exception as exc:
+            with _RETRAIN_LOCK:
+                _RETRAIN_STATE.update({"phase": "error", "message": f"启动续训失败: {exc}"})
+
+    threading.Thread(target=finish, name="lelab-bon-retrain", daemon=True).start()
+    return {
+        "success": True,
+        "target_repo_id": target_repo_id,
+        "labeled": labeled,
+        "message": "合并已开始，完成后自动从源任务 checkpoint 续训",
+    }
+
+
+def handle_aim_fit(repo_id: str, camera: str, colors: list[str], horizon: int = 25) -> dict[str, Any]:
+    """Fit the aim verifier on a dataset and persist the calibration.
+
+    Only the dataset is needed (chunked actions via delta_timestamps); no policy
+    weights are loaded, so this stays cheap enough to run from the deploy page.
+    """
+    from lerobot.datasets.lerobot_dataset import LeRobotDataset, LeRobotDatasetMetadata
+
+    from . import aim
+
+    root = _dataset_root_for(repo_id)
+    try:
+        ds_meta = LeRobotDatasetMetadata(repo_id, root=str(root))
+        fps = float(ds_meta.fps)
+        delta_timestamps = {"action": [i / fps for i in range(horizon)]}
+        dataset = LeRobotDataset(repo_id, root=str(root), delta_timestamps=delta_timestamps)
+    except Exception as exc:
+        return {"success": False, "status_code": 400, "message": f"Cannot load dataset: {exc}"}
+    want = camera if camera.startswith("observation.images.") else f"observation.images.{camera}"
+    cam_key = next((k for k in ds_meta.camera_keys if k.lower() == want.lower()), None)
+    if cam_key is None:
+        return {
+            "success": False,
+            "status_code": 400,
+            "message": f"相机 {camera} 不在数据集里：{ds_meta.camera_keys}",
+        }
+    fit = aim.fit(dataset, cam_key, colors, horizon=horizon)
+    if fit is None:
+        return {"success": False, "status_code": 400, "message": "Not enough usable frames to fit aim"}
+    aim.save_calibration(root, fit)
+    return {
+        "success": True,
+        "mean_r2": fit["mean_r2"],
+        "r2_xy": fit["r2_xy"],
+        "usable": aim.verifier_usable(fit),
+        "path": str(root / aim.CALIBRATION_RELPATH),
+    }
+
+
+def _dataset_root_for(repo_id: str) -> Path:
+    from lerobot.utils.constants import HF_LEROBOT_HOME
+
+    return Path(HF_LEROBOT_HOME) / repo_id
 
 
 def _hf_default_user() -> str | None:
@@ -1054,6 +1260,14 @@ def handle_start_inference(request: InferenceRequest) -> dict[str, Any]:
         follower_id = setup_follower_calibration_file(request.follower_config)
         policy_path = _resolve_policy_path(request.policy_ref)
 
+        # BoN selects whole chunks and needs recorded episodes for the flywheel,
+        # so it is mutually exclusive with smoothing/RTC and records via sentry.
+        if request.bon_enabled:
+            request.rtc = False
+            request.chunk_smooth = False
+            if request.capture_mode == "base":
+                request.capture_mode = "sentry"
+
         capture_args, capture_meta, capture_error = _build_capture_args(request)
         if capture_error:
             with _state_lock:
@@ -1112,6 +1326,22 @@ def handle_start_inference(request: InferenceRequest) -> dict[str, Any]:
                     f"--lelab.max_correction_s={request.max_correction_s}",
                     # The modal's 时长 means "per episode" while capturing.
                     f"--lelab.per_episode_s={request.duration_s}",
+                ]
+            )
+        if request.bon_enabled:
+            cmd.extend(
+                [
+                    "--lelab.bon_enabled=1",
+                    f"--lelab.bon_mode={request.bon_mode}",
+                    f"--lelab.bon_n={request.bon_n}",
+                    f"--lelab.bon_sigma_scale={request.bon_sigma_scale}",
+                    f"--lelab.bon_k={request.bon_k}",
+                    f"--lelab.bon_confirm_k={request.bon_confirm_k}",
+                    f"--lelab.bon_verifier={request.bon_verifier}",
+                    f"--lelab.bon_camera={request.bon_camera}",
+                    f"--lelab.bon_colors={request.bon_colors}",
+                    f"--lelab.bon_aim_repo={request.bon_aim_repo}",
+                    f"--lelab.bon_target_box={json.dumps(request.bon_target_box or [])}",
                 ]
             )
 
@@ -1218,6 +1448,18 @@ def handle_start_inference(request: InferenceRequest) -> dict[str, Any]:
             "max_correction_s": request.max_correction_s,
             "leader_port": request.leader_port,
             "leader_config": request.leader_config,
+            "bon_enabled": request.bon_enabled,
+            "bon_mode": request.bon_mode,
+            "bon_n": request.bon_n,
+            "bon_sigma_scale": request.bon_sigma_scale,
+            "bon_k": request.bon_k,
+            "bon_confirm_k": request.bon_confirm_k,
+            "bon_verifier": request.bon_verifier,
+            "bon_camera": request.bon_camera,
+            "bon_colors": request.bon_colors,
+            "bon_target_box": request.bon_target_box,
+            "bon_calibration_id": request.bon_calibration_id,
+            "bon_aim_repo": request.bon_aim_repo,
         }
     logger.info("Inference started: pid=%s policy=%s runs=%d", proc.pid, policy_path, request.n_runs)
     return {"success": True, "message": "Inference started", "log_path": str(log_path)}
@@ -1285,6 +1527,7 @@ def _capture_status_fields(meta: dict[str, Any]) -> dict[str, Any]:
         "takeover": state,
         # Lifetime counters for this capture dataset, folded in from the child.
         "take_stats": stats,
+        "bon": _read_bon_state(),
     }
 
 

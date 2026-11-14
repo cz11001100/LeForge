@@ -331,6 +331,61 @@ def _recompute_stats(root: Path, info: dict[str, Any], rows: list[dict[str, Any]
     write_stats(aggregate_stats(per_episode), root)
 
 
+def _read_sidecar_labels(root: Path) -> dict[str, bool]:
+    path = root / "meta" / "lelab_episode_labels.json"
+    try:
+        return {str(k): bool(v) for k, v in json.loads(path.read_text()).items()}
+    except (OSError, ValueError):
+        return {}
+
+
+def _merge_success_labels(root: Path, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Fold the BoN auto-judge sidecar into episode rows as a `success` column.
+
+    Failure episodes are kept (never filtered); the label only annotates them so
+    the next training set can audit success/failure counts.
+    """
+    labels = _read_sidecar_labels(root)
+    if not labels:
+        return rows
+    for row in rows:
+        key = str(row.get("episode_index"))
+        if key in labels:
+            row["success"] = labels[key]
+        elif "success" not in row:
+            row["success"] = False
+    return rows
+
+
+def apply_episode_labels(repo_id: str) -> int:
+    """Write the sidecar success labels into a dataset's episode index in place.
+
+    Returns the number of labeled episodes. Used by the BoN retrain entry before
+    merging so the next training set carries per-episode success.
+    """
+    import pyarrow.parquet as pq
+
+    root = _cache_root_for(repo_id)
+    episodes_dir = root / "meta" / "episodes"
+    if not episodes_dir.exists():
+        return 0
+    rows: list[dict[str, Any]] = []
+    for path in sorted(episodes_dir.rglob("*.parquet")):
+        rows.extend(pq.read_table(path).to_pylist())
+    labels = _read_sidecar_labels(root)
+    if not labels:
+        return 0
+    rows = _merge_success_labels(root, rows)
+    _write_episodes(root, rows)
+    return sum(1 for r in rows if str(r.get("episode_index")) in labels)
+
+
+def _cache_root_for(repo_id: str) -> Path:
+    import os
+
+    return Path(os.environ.get("HF_LEROBOT_HOME", "~/.cache/huggingface/lerobot")).expanduser() / repo_id
+
+
 def _write_episodes(root: Path, rows: list[dict[str, Any]]) -> None:
     """Replace the episode index with `rows`, keeping the previous one until the
     replacement is fully on disk.
@@ -340,6 +395,7 @@ def _write_episodes(root: Path, rows: list[dict[str, Any]]) -> None:
     import pyarrow as pa
     import pyarrow.parquet as pq
 
+    rows = _merge_success_labels(root, rows)
     episodes_dir = root / "meta" / "episodes"
     staging = root / "meta" / "episodes.reindexing"
     shutil.rmtree(staging, ignore_errors=True)

@@ -41,7 +41,9 @@ import {
   getInferenceStatus,
   sendInferenceTakeover,
   stopInference,
+  updateBonConfig,
 } from "@/lib/inferenceApi";
+import BonPanel from "@/components/inference/BonPanel";
 
 const POLL_MS = 1000;
 
@@ -132,6 +134,9 @@ const Inference: React.FC = () => {
   const [snapshotLoading, setSnapshotLoading] = useState(false);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [endingRound, setEndingRound] = useState(false);
+  const [drawingBox, setDrawingBox] = useState(false);
+  const [tempBox, setTempBox] = useState<number[] | null>(null);
+  const drawStartRef = useRef<number[] | null>(null);
   const navigatedAwayRef = useRef(false);
   const stopRequestedRef = useRef(false);
 
@@ -266,6 +271,8 @@ const Inference: React.FC = () => {
   };
 
   const handleFail = async () => {
+    const b = status?.bon;
+    if (b?.enabled && b.mode !== "greedy") return;
     await handleSnapshot();
     // Dagger: same boundary as 本轮成功, minus the data — the take is dropped
     // and only the failure counter moves.
@@ -284,6 +291,8 @@ const Inference: React.FC = () => {
   };
 
   const handleSuccess = async () => {
+    const b = status?.bon;
+    if (b?.enabled && b.mode !== "greedy") return;
     // Dagger: a take ends here — commit the episode, walk home, next one starts.
     if ((status?.capture_mode ?? "base") === "dagger") {
       setEndingRound(true);
@@ -326,6 +335,8 @@ const Inference: React.FC = () => {
       const el = e.target as HTMLElement | null;
       if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) return;
       const mode = status.capture_mode ?? "base";
+      const b = status.bon;
+      if (b?.enabled && b.mode !== "greedy" && e.key !== "Escape") return;
       if (mode === "dagger") {
         const session = status.takeover;
         if (!session?.session_phase) return;
@@ -444,6 +455,56 @@ const Inference: React.FC = () => {
   const gracefulStop = captureMode === "dagger" || captureMode === "highlight";
   const failures = takeover.failures ?? 0;
   const takeStats = status.take_stats;
+  const bon = status.bon ?? {};
+  const bonLive = bon.enabled !== undefined;
+  const bonAuto = !!bon.enabled && bon.mode !== "greedy";
+  const bonCamPresent = bonLive && cameraFeeds.some((f) => f.key === bon.camera);
+
+  const normPoint = (e: React.PointerEvent<HTMLDivElement>): number[] => {
+    const r = e.currentTarget.getBoundingClientRect();
+    return [
+      Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)),
+      Math.min(1, Math.max(0, (e.clientY - r.top) / r.height)),
+    ];
+  };
+  const onDrawDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    const p = normPoint(e);
+    drawStartRef.current = p;
+    setTempBox([p[0], p[1], p[0], p[1]]);
+  };
+  const onDrawMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const s = drawStartRef.current;
+    if (!s) return;
+    const p = normPoint(e);
+    setTempBox([
+      Math.min(s[0], p[0]),
+      Math.min(s[1], p[1]),
+      Math.max(s[0], p[0]),
+      Math.max(s[1], p[1]),
+    ]);
+  };
+  const onDrawUp = () => {
+    const box = tempBox;
+    drawStartRef.current = null;
+    setTempBox(null);
+    setDrawingBox(false);
+    if (box && box[2] - box[0] > 0.02 && box[3] - box[1] > 0.02) {
+      updateBonConfig(baseUrl, fetchWithHeaders, { target_box: box }).catch((e) =>
+        toast({
+          title: "目标框没送达",
+          description: e instanceof Error ? e.message : String(e),
+          variant: "destructive",
+        }),
+      );
+    }
+  };
+  const boxStyle = (b: number[]) => ({
+    left: `${b[0] * 100}%`,
+    top: `${b[1] * 100}%`,
+    width: `${(b[2] - b[0]) * 100}%`,
+    height: `${(b[3] - b[1]) * 100}%`,
+  });
 
   return (
     <div className="h-screen bg-black text-white p-6 flex flex-col overflow-hidden">
@@ -577,14 +638,44 @@ const Inference: React.FC = () => {
                 gridTemplateColumns: `repeat(${Math.min(cameraFeeds.length, 3)}, minmax(0, 1fr))`,
               }}
             >
-              {cameraFeeds.map((feed) => (
-                <CameraPreview
-                  key={feed.key}
-                  name={feed.name}
-                  pending={isSettingUp}
-                  src={`${baseUrl}/inference-camera-feed/${encodeURIComponent(feed.name)}`}
-                />
-              ))}
+              {cameraFeeds.map((feed) => {
+                const isBonCam = bonCamPresent && feed.key === bon.camera;
+                const box = isBonCam ? (bon.target_box ?? null) : null;
+                return (
+                  <div key={feed.key} className="relative">
+                    <CameraPreview
+                      name={feed.name}
+                      pending={isSettingUp}
+                      src={`${baseUrl}/inference-camera-feed/${encodeURIComponent(feed.name)}`}
+                    />
+                    {isBonCam && box && !drawingBox && (
+                      <div
+                        className="absolute border-2 border-green-400/80 pointer-events-none"
+                        style={boxStyle(box)}
+                      >
+                        <span className="absolute -top-5 left-0 text-[10px] text-green-300 bg-black/60 px-1 rounded">
+                          目标框
+                        </span>
+                      </div>
+                    )}
+                    {isBonCam && drawingBox && (
+                      <div
+                        className="absolute inset-0 cursor-crosshair touch-none"
+                        onPointerDown={onDrawDown}
+                        onPointerMove={onDrawMove}
+                        onPointerUp={onDrawUp}
+                      >
+                        {tempBox && (
+                          <div
+                            className="absolute border-2 border-amber-400 pointer-events-none"
+                            style={boxStyle(tempBox)}
+                          />
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           ) : (
             <div className="flex-1 min-h-0 flex items-center justify-center text-sm text-gray-500">
@@ -605,12 +696,19 @@ const Inference: React.FC = () => {
             />
           </div>
 
+          <BonPanel
+            status={status}
+            drawing={drawingBox}
+            canDraw={bonCamPresent}
+            onToggleDraw={() => setDrawingBox((v) => !v)}
+          />
+
           <div className="flex items-center gap-3 flex-shrink-0">
             {step ? (
               <div className="flex w-full items-center gap-3">
                 <Button
                   onClick={handleFail}
-                  disabled={!isRunning || step === "ready" || snapshotLoading}
+                  disabled={!isRunning || step === "ready" || snapshotLoading || bonAuto}
                   variant="outline"
                   className="w-44 h-12 border-red-500/50 text-red-400 hover:bg-red-500/10 hover:text-red-300 disabled:opacity-40"
                   title="丢弃本集，重录这一集（←）"
@@ -641,7 +739,7 @@ const Inference: React.FC = () => {
                 </Button>
                 <Button
                   onClick={handleSuccess}
-                  disabled={!isRunning || step === "ready" || !!endingRound}
+                  disabled={!isRunning || step === "ready" || !!endingRound || bonAuto}
                   variant="outline"
                   className="w-44 h-12 border-green-500/50 text-green-400 hover:bg-green-500/10 hover:text-green-300 disabled:opacity-40"
                   title="保存本集，准备下一集（→）"
@@ -654,7 +752,7 @@ const Inference: React.FC = () => {
               <>
                 <Button
                   onClick={handleFail}
-                  disabled={!isRunning || snapshotLoading}
+                  disabled={!isRunning || snapshotLoading || bonAuto}
                   variant="outline"
                   className="w-44 h-12 border-red-500/50 text-red-400 hover:bg-red-500/10 hover:text-red-300 disabled:opacity-40"
                   title="存档失败现场（最近 30 帧观测与预测动作），不结束本轮（←）"
@@ -664,7 +762,7 @@ const Inference: React.FC = () => {
                 </Button>
                 <Button
                   onClick={handleSuccess}
-                  disabled={!isRunning || endingRound || !!status.switching_round}
+                  disabled={!isRunning || endingRound || !!status.switching_round || bonAuto}
                   className="flex-1 h-12 bg-green-600 hover:bg-green-700 text-base font-semibold text-white disabled:opacity-50"
                 >
                   {endingRound || status.switching_round ? (
@@ -690,7 +788,7 @@ const Inference: React.FC = () => {
                 </Button>
                 <Button
                   onClick={handleFail}
-                  disabled={!isRunning || snapshotLoading}
+                  disabled={!isRunning || snapshotLoading || bonAuto}
                   variant="outline"
                   className="w-36 border-amber-500/50 text-amber-400 hover:bg-amber-500/10 hover:text-amber-300 disabled:opacity-40"
                   title="存档失败现场（最近 30 帧观测与预测动作）"
@@ -704,7 +802,7 @@ const Inference: React.FC = () => {
                 </Button>
                 <Button
                   onClick={handleSuccess}
-                  disabled={!isRunning || endingRound || !!status.switching_round}
+                  disabled={!isRunning || endingRound || !!status.switching_round || bonAuto}
                   className="w-40 bg-green-600 hover:bg-green-700 text-white font-semibold disabled:opacity-50"
                 >
                   {endingRound || status.switching_round ? (
@@ -725,6 +823,11 @@ const Inference: React.FC = () => {
                 )}
                 {capturing && captureMode === "sentry" && (
                   <span className="text-xs text-gray-500">Stop 会结束会话并保存已录的集。</span>
+                )}
+                {bonAuto && (
+                  <span className="text-xs text-gray-500">
+                    BoN 自动判成中，手动 Success/Defeat 已禁用。
+                  </span>
                 )}
               </>
             )}

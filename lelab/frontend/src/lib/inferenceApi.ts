@@ -31,6 +31,54 @@ export interface StartInferenceRequest {
   max_correction_s?: number;
   leader_port?: string;
   leader_config?: string;
+  bon_enabled?: boolean;
+  bon_mode?: BonMode;
+  bon_n?: number;
+  bon_sigma_scale?: number;
+  bon_k?: number;
+  bon_confirm_k?: number;
+  bon_verifier?: string;
+  bon_camera?: string;
+  bon_colors?: string;
+  bon_target_box?: number[] | null;
+  bon_aim_repo?: string;
+}
+
+export type BonMode = "bon" | "greedy" | "alternate";
+
+// Published by the rollout subprocess's BoN controller (bon_state.json).
+// Absent/empty when the run was started without BoN.
+export interface BonState {
+  enabled: boolean;
+  mode: BonMode;
+  n: number;
+  sigma_scale: number;
+  k: number;
+  confirm_k: number;
+  verifier: string;
+  verifier_ok: boolean;
+  verifier_r2: number | null;
+  camera: string;
+  target_box: number[] | null;
+  last_scores: number[];
+  last_selected: number;
+  judge_success: boolean;
+  success_count: number;
+  fail_count: number;
+  active_mode?: "bon" | "greedy";
+  episode_index?: number;
+  arm_stats?: Record<string, [number, number]>;
+}
+
+export interface BonCandidateRow {
+  tick: number;
+  selected_id: number;
+  scores: number[];
+  candidate_ends: number[][];
+  mu_end: number[];
+  executed_action: number[];
+  sigma_scale: number;
+  n: number;
 }
 
 export interface TakeStats {
@@ -91,6 +139,7 @@ export interface InferenceStatus {
   // rollout subprocess on every poll.
   take_stats?: TakeStats;
   switching_round?: boolean;
+  bon?: Partial<BonState>;
 }
 
 export async function startInference(
@@ -163,5 +212,83 @@ export async function endInferenceRound(
     method: "POST",
     body: { advance },
     action: "End round",
+  });
+}
+
+export async function updateBonConfig(
+  baseUrl: string,
+  fetcher: Fetcher,
+  cfg: Record<string, unknown>,
+): Promise<{ message: string }> {
+  return apiRequest(baseUrl, fetcher, "/bon-config", {
+    method: "POST",
+    body: cfg,
+    action: "Update BoN config",
+  });
+}
+
+export async function getBonCandidates(
+  baseUrl: string,
+  fetcher: Fetcher,
+  repoId: string,
+  limit = 50,
+): Promise<{ success: boolean; rows: BonCandidateRow[]; total?: number; path: string }> {
+  const params = new URLSearchParams({ repo_id: repoId, limit: String(limit) });
+  return apiRequest(baseUrl, fetcher, `/bon-candidates?${params}`, {
+    action: "Get BoN candidates",
+  });
+}
+
+export async function getBonLabels(
+  baseUrl: string,
+  fetcher: Fetcher,
+  repoId: string,
+): Promise<{ success: boolean; labels: Record<string, boolean>; success: number; fail: number }> {
+  const params = new URLSearchParams({ repo_id: repoId });
+  return apiRequest(baseUrl, fetcher, `/bon-labels?${params}`, {
+    action: "Get BoN labels",
+  });
+}
+
+export async function fitAimVerifier(
+  baseUrl: string,
+  fetcher: Fetcher,
+  body: { repo_id: string; camera?: string; colors?: string[]; horizon?: number },
+): Promise<{ success: boolean; mean_r2: number; r2_xy: number[]; usable: boolean; path: string }> {
+  return apiRequest(baseUrl, fetcher, "/aim-fit", {
+    method: "POST",
+    body,
+    action: "Fit aim verifier",
+  });
+}
+
+export interface BonRetrainStatus {
+  phase: "idle" | "merging" | "starting" | "done" | "error";
+  target?: string;
+  source_job?: string;
+  labeled?: number;
+  job_id?: string;
+  message?: string;
+  started_at?: number;
+}
+
+export async function startBonRetrain(
+  baseUrl: string,
+  fetcher: Fetcher,
+  body: { job_id: string; capture_repo: string; target_repo_id?: string },
+): Promise<{ success: boolean; target_repo_id: string; labeled: number; message: string }> {
+  return apiRequest(baseUrl, fetcher, "/bon-retrain", {
+    method: "POST",
+    body,
+    action: "Start flywheel retrain",
+  });
+}
+
+export async function getBonRetrainStatus(
+  baseUrl: string,
+  fetcher: Fetcher,
+): Promise<BonRetrainStatus> {
+  return apiRequest(baseUrl, fetcher, "/bon-retrain-status", {
+    action: "Get flywheel retrain status",
   });
 }
