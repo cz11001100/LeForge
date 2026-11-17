@@ -18,7 +18,7 @@ const TrainingHeader: React.FC = () => {
           <ArrowLeft className="w-5 h-5" />
         </Button>
         <Logo />
-        <h1 className="font-bold text-slate-900 text-2xl">Training</h1>
+        <h1 className="font-bold text-slate-900 text-2xl">训练 Training</h1>
       </div>
     </div>
   );

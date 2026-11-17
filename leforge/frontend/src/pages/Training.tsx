@@ -843,7 +843,7 @@ const MonitoringMode: React.FC<{ jobId: string }> = ({ jobId }) => {
               <CardHeader className="pb-3">
                 <CardTitle className="text-slate-900 flex items-center gap-2 text-base">
                   <Cpu className="h-5 w-5 text-cyan-700" />
-                  模型信息 / 训练配置
+                  模型信息 / 训练配置 Model & Training Config
                   <ChevronDown className="h-4 w-4 text-slate-600 ml-auto transition-transform data-[state=open]:rotate-180" />
                 </CardTitle>
               </CardHeader>

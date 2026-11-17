@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Settings, Trash2 } from "lucide-react";
+import { Bot, Settings, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -46,58 +46,61 @@ const RobotTile: React.FC<RobotTileProps> = ({
 
   return (
     <div className="bg-sky-50 rounded-lg border border-sky-300 p-3 flex flex-col gap-2 relative">
-      <div className="flex items-center gap-2">
-        <div className="flex-1 min-w-0">
-          <RobotSelector
-            selectedName={selectedName}
-            availableNames={availableNames}
-            onSelect={onSelect}
-            onCreateNew={onCreateNew}
-            isLoading={isLoading}
-          />
+      <div className="flex items-center gap-2 h-10">
+        <Bot className="h-5 w-5 text-slate-700" />
+        <h3 className="font-semibold text-lg text-left">机器人 Robot</h3>
+        <div className="ml-auto flex items-center gap-1 min-w-0">
+          {status && (
+            <span
+              className={`text-xs truncate ${
+                robot!.is_clean ? "text-green-700" : "text-amber-700"
+              }`}
+            >
+              {status}
+            </span>
+          )}
+          {robot && (
+            <div className="flex items-center gap-1 shrink-0">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-8 w-8 text-slate-700 hover:text-slate-900"
+                    onClick={() => onConfigure(robot.name)}
+                    aria-label="Configure"
+                  >
+                    <Settings className="w-4 h-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Configure (calibrate)</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-8 w-8 text-red-700 hover:text-red-700 hover:bg-red-100"
+                    onClick={() => setConfirmDelete(true)}
+                    aria-label="Delete robot"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Delete robot config</TooltipContent>
+              </Tooltip>
+            </div>
+          )}
         </div>
-        {status && (
-          <p
-            className={`text-xs truncate shrink-0 ${
-              robot!.is_clean ? "text-green-700" : "text-amber-700"
-            }`}
-          >
-            {status}
-          </p>
-        )}
-        {robot && (
-          <div className="flex items-center gap-1 shrink-0">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="h-8 w-8 text-slate-700 hover:text-slate-900"
-                  onClick={() => onConfigure(robot.name)}
-                  aria-label="Configure"
-                >
-                  <Settings className="w-4 h-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Configure (calibrate)</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="h-8 w-8 text-red-700 hover:text-red-700 hover:bg-red-100"
-                  onClick={() => setConfirmDelete(true)}
-                  aria-label="Delete robot"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Delete robot config</TooltipContent>
-            </Tooltip>
-          </div>
-        )}
       </div>
+
+      <RobotSelector
+        selectedName={selectedName}
+        availableNames={availableNames}
+        onSelect={onSelect}
+        onCreateNew={onCreateNew}
+        isLoading={isLoading}
+      />
 
       {robot && (
         <Tooltip>
@@ -126,7 +129,7 @@ const RobotTile: React.FC<RobotTileProps> = ({
         <Dialog open={confirmDelete} onOpenChange={setConfirmDelete}>
           <DialogContent className="bg-sky-100 border-sky-200 text-slate-900">
             <DialogHeader>
-              <DialogTitle>Delete robot config?</DialogTitle>
+              <DialogTitle>删除机器人配置？ Delete robot config?</DialogTitle>
               <DialogDescription className="text-slate-600">
                 This deletes the robot config file from disk. Calibration files
                 are not removed. This cannot be undone.

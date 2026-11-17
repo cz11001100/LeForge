@@ -120,7 +120,7 @@ const RecordingModal: React.FC<RecordingModalProps> = ({
           <div className="grid grid-cols-1 gap-6">
             <div className="space-y-4">
               <h3 className="text-lg font-semibold text-slate-900 border-b border-sky-300 pb-2">
-                Robot Configuration
+                机器人配置 Robot Configuration
               </h3>
               {!robot ? (
                 <Alert className="bg-amber-100 border-amber-300 text-amber-700">
@@ -150,7 +150,7 @@ const RecordingModal: React.FC<RecordingModalProps> = ({
 
             <div className="space-y-4">
               <h3 className="text-lg font-semibold text-slate-900 border-b border-sky-300 pb-2">
-                Dataset Configuration
+                数据集配置 Dataset Configuration
               </h3>
               <div className="grid grid-cols-1 gap-4">
                 <div className="space-y-2">

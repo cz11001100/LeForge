@@ -13,15 +13,58 @@
 # limitations under the License.
 
 import logging
+import os
 import time
 import types
+from urllib.parse import urlsplit
 
 from huggingface_hub import HfApi, get_token, login as hf_login, whoami
-from huggingface_hub.errors import HfHubHTTPError, LocalTokenNotFoundError
+from huggingface_hub.errors import HfHubHTTPError
 
 logger = logging.getLogger(__name__)
 
 LOGIN_COMMAND = "hf auth login"
+
+_PROXY_ENV_KEYS = (
+    "ALL_PROXY",
+    "all_proxy",
+    "HTTP_PROXY",
+    "http_proxy",
+    "HTTPS_PROXY",
+    "https_proxy",
+)
+
+
+def _drop_proxies_httpx_cannot_use() -> None:
+    """Drop proxy env vars that make every Hub call raise before it is sent.
+
+    huggingface_hub 2.x uses httpx, which parses the proxy environment itself.
+    A shell that exports `ALL_PROXY=socks://host:port` (common with v2rayN-style
+    clients) makes httpx raise `ValueError: Unknown scheme for proxy URL`, and
+    socks4/5 proxies need the optional `socksio` package. Neither case can ever
+    succeed, so remove just those variables and leave HTTP(S)_PROXY untouched.
+    """
+    try:
+        import socksio  # noqa: F401
+    except ImportError:
+        socksio = None
+    for key in _PROXY_ENV_KEYS:
+        value = os.environ.get(key)
+        if not value:
+            continue
+        scheme = urlsplit(value).scheme.lower()
+        if not scheme.startswith("socks"):
+            continue
+        if socksio is None or scheme == "socks":
+            os.environ.pop(key, None)
+            logger.info(
+                "Ignoring %s=%s: proxy scheme unsupported by huggingface_hub (httpx)",
+                key,
+                value,
+            )
+
+
+_drop_proxies_httpx_cannot_use()
 
 # /whoami-v2 is heavily rate-limited (security). Share one HfApi across the
 # app so its in-process whoami cache (cache=True) actually hits — otherwise
@@ -97,8 +140,12 @@ def handle_hf_auth_status() -> dict:
             "orgs": [o["name"] for o in info.get("orgs", [])],
             "login_command": LOGIN_COMMAND,
         }
-    except (LocalTokenNotFoundError, HfHubHTTPError, OSError) as e:
-        logger.info(f"HF auth check: not authenticated ({type(e).__name__})")
+    except Exception as e:
+        # Never surface a transport/config failure as a 500: the UI turns that
+        # into "HF CLI not configured", which is wrong advice. Catch everything
+        # (httpx raises ValueError for bad proxy schemes, not OSError) and let
+        # the caller treat it as unauthenticated.
+        logger.info(f"HF auth check: not authenticated ({type(e).__name__}: {e})")
         return {
             "authenticated": False,
             "username": None,
@@ -121,6 +168,8 @@ def handle_hf_login(token: str) -> dict:
         info = whoami(token=token)
     except HfHubHTTPError as exc:
         raise ValueError(f"Invalid token: {exc}") from exc
+    except Exception as exc:
+        raise ValueError(f"Cannot reach Hugging Face: {exc}") from exc
     hf_login(token=token, add_to_git_credential=False)
     # The cached whoami was keyed by the previous token (if any); drop it so
     # the next caller validates against the new one.

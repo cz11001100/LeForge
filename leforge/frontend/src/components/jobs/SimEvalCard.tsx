@@ -461,7 +461,7 @@ const SimEvalCard: React.FC<{
       <CardHeader className="pb-3">
         <CardTitle className="text-slate-900 flex items-center gap-2 text-base">
           <Box className="h-5 w-5 text-cyan-700" />
-          仿真评测
+          仿真评测 Simulation Evaluation
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">

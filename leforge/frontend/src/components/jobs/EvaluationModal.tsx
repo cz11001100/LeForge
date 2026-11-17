@@ -42,7 +42,7 @@ const EvaluationModal: React.FC<Props> = ({ open, onOpenChange, job, group }) =>
       <DialogContent className="bg-sky-100 border-sky-200 text-slate-900 sm:max-w-[860px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-slate-900 text-center text-2xl font-bold">
-            模型评测{title ? ` · ${title}` : ""}
+            模型评测 Model Evaluation{title ? ` · ${title}` : ""}
           </DialogTitle>
         </DialogHeader>
         {activeJob ? (

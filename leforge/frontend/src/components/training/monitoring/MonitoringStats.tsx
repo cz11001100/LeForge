@@ -125,7 +125,7 @@ const MonitoringStats: React.FC<MonitoringStatsProps> = ({
                 <Activity className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="text-sm text-slate-600">Progress</h3>
+                <h3 className="text-sm text-slate-600">进度 Progress</h3>
                 <div className="text-base font-semibold text-slate-900">{stepLabel}</div>
               </div>
             </div>
@@ -156,7 +156,7 @@ const MonitoringStats: React.FC<MonitoringStatsProps> = ({
                 <CheckCircle className="w-4 h-4" />
               </div>
               <span>
-                Loss{' '}
+                损失 Loss{' '}
                 <span className="text-slate-600 text-sm font-normal">
                   ({trainingStatus.current_loss?.toFixed(4) ?? '—'})
                 </span>
@@ -217,7 +217,7 @@ const MonitoringStats: React.FC<MonitoringStatsProps> = ({
                 <Activity className="w-4 h-4" />
               </div>
               <span>
-                Learning Rate{' '}
+                学习率 Learning Rate{' '}
                 <span className="text-slate-600 text-sm font-normal">
                   ({trainingStatus.current_lr?.toExponential(2) ?? '—'})
                 </span>

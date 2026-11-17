@@ -42,10 +42,10 @@ const RobotSelector: React.FC<RobotSelectorProps> = ({
 
   const createDisabled = !canCreate;
   const createLabel = matchesExisting
-    ? "Already exists"
+    ? "已存在"
     : trimmed === ""
-      ? "Create new robot…"
-      : `Create "${trimmed}"`;
+      ? "新建机器人…"
+      : `新建 "${trimmed}"`;
 
   const reset = () => {
     setQuery("");
@@ -71,12 +71,12 @@ const RobotSelector: React.FC<RobotSelectorProps> = ({
           role="combobox"
           aria-expanded={open}
           disabled={isLoading}
-          className="w-full justify-between bg-sky-100 border-sky-300 text-slate-900 hover:bg-sky-200 hover:text-slate-900 font-normal"
+          className="w-full justify-between bg-sky-50 border-sky-300 text-slate-900 hover:bg-sky-200 hover:text-slate-900 font-normal"
         >
           <span className={cn("truncate", selectedName ? "" : "text-slate-600")}>
             {isLoading
-              ? "Loading..."
-              : selectedName ?? "Select a robot or type a new name"}
+              ? "加载中…"
+              : selectedName ?? "选择机器人 Select robot"}
           </span>
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
@@ -88,7 +88,7 @@ const RobotSelector: React.FC<RobotSelectorProps> = ({
       >
         <Command className="bg-sky-50">
           <CommandInput
-            placeholder="Search or type new name..."
+            placeholder="搜索或输入新名称…"
             value={query}
             onValueChange={setQuery}
             onKeyDown={(e) => {
@@ -102,11 +102,11 @@ const RobotSelector: React.FC<RobotSelectorProps> = ({
           <CommandList>
             {availableNames.length === 0 && (
               <CommandEmpty className="py-4 text-sm text-slate-600 text-center">
-                No robots yet. Type a name to create one.
+                暂无机器人，输入名称即可创建。
               </CommandEmpty>
             )}
             {availableNames.length > 0 && (
-              <CommandGroup heading="Existing">
+              <CommandGroup heading="已有机器人 Existing">
                 {availableNames.map((name) => (
                   <CommandItem
                     key={name}

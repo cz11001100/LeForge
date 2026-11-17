@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import os
 from unittest.mock import patch
 
 
@@ -61,3 +62,24 @@ def test_handle_hf_auth_status_returns_dict() -> None:
         assert result["username"] == "alice"
         assert "orgs" in result
         assert "login_command" in result
+
+
+def test_handle_hf_auth_status_degrades_on_unexpected_errors() -> None:
+    from leforge.utils import hf_auth
+
+    # httpx raises ValueError (not OSError) for unsupported proxy schemes; the
+    # status endpoint must report unauthenticated instead of returning a 500.
+    with patch("leforge.utils.hf_auth.whoami", side_effect=ValueError("bad proxy")):
+        result = hf_auth.handle_hf_auth_status()
+    assert result["authenticated"] is False
+    assert result["username"] is None
+
+
+def test_unsupported_socks_proxy_is_dropped(monkeypatch) -> None:
+    from leforge.utils import hf_auth
+
+    monkeypatch.setenv("ALL_PROXY", "socks://127.0.0.1:10808/")
+    monkeypatch.setenv("HTTPS_PROXY", "http://127.0.0.1:10808/")
+    hf_auth._drop_proxies_httpx_cannot_use()
+    assert "ALL_PROXY" not in os.environ
+    assert os.environ["HTTPS_PROXY"] == "http://127.0.0.1:10808/"

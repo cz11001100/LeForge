@@ -21,6 +21,7 @@ export interface StartInferenceRequest {
   n_runs: number;
   chunk_smooth?: boolean;
   chunk_smooth_strength?: number;
+  bon_enabled?: boolean;
   rtc?: boolean;
   rtc_guidance?: number;
   capture_mode?: CaptureMode;
@@ -134,6 +135,12 @@ export interface InferenceStatus {
   // Dataset-wide episode target (段数上限): a resumed dataset counts toward this
   // total, so the page shows 第 N / M 集 instead of process restarts.
   episode_target?: number;
+  // Anti-jitter path this session asked for; RTC and chunk smoothing are
+  // mutually exclusive, so the page can show exactly one badge.
+  rtc?: boolean;
+  rtc_guidance?: number;
+  chunk_smooth?: boolean;
+  chunk_smooth_strength?: number;
   takeover?: TakeoverState;
   // Lifetime counters for the capture dataset being written, folded in from the
   // rollout subprocess on every poll.

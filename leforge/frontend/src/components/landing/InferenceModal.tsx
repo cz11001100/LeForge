@@ -489,7 +489,7 @@ const InferenceModal: React.FC<Props> = ({
             </div>
           </div>
           <DialogTitle className="text-slate-900 text-center text-2xl font-bold">
-            Configure Inference
+            配置推理 Configure Inference
           </DialogTitle>
         </DialogHeader>
 
@@ -502,7 +502,7 @@ const InferenceModal: React.FC<Props> = ({
           <div className="grid grid-cols-2 gap-4">
           <div className="space-y-4">
             <h3 className="text-lg font-semibold text-slate-900 border-b border-sky-300 pb-2">
-              Robot Configuration
+              机器人配置 Robot Configuration
             </h3>
             {!robot ? (
               <Alert className="bg-amber-100 border-amber-300 text-amber-700">
@@ -531,7 +531,7 @@ const InferenceModal: React.FC<Props> = ({
 
           <div className="space-y-4">
             <h3 className="text-lg font-semibold text-slate-900 border-b border-sky-300 pb-2">
-              Checkpoint
+              检查点 Checkpoint
             </h3>
             {checkpoints.length === 0 ? (
               <Alert className="bg-amber-100 border-amber-300 text-amber-700">
@@ -569,7 +569,7 @@ const InferenceModal: React.FC<Props> = ({
 
           <div className="space-y-4">
             <h3 className="text-lg font-semibold text-slate-900 border-b border-sky-300 pb-2">
-              数据采集
+              数据采集 Data Collection
             </h3>
             {lastRealWorld && (
               <p className="text-xs text-slate-600">
@@ -672,7 +672,7 @@ const InferenceModal: React.FC<Props> = ({
 
           <div className="space-y-4">
             <h3 className="text-lg font-semibold text-slate-900 border-b border-sky-300 pb-2">
-              Run parameters
+              运行参数 Run parameters
             </h3>
             {policyConfig?.requires_task ? (
               <div className="space-y-2">
@@ -978,7 +978,7 @@ const InferenceModal: React.FC<Props> = ({
 
           <div className="space-y-4">
             <h3 className="text-lg font-semibold text-slate-900 border-b border-sky-300 pb-2">
-              Cameras
+              相机 Cameras
             </h3>
             {policyConfigLoading ? (
               <div className="flex items-center gap-2 text-sm text-slate-600">

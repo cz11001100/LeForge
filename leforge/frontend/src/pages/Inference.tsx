@@ -519,8 +519,36 @@ const Inference: React.FC = () => {
             <ArrowLeft className="w-5 h-5" />
           </Button>
           <Logo />
-          <h1 className="font-bold text-slate-900 text-xl">Inference</h1>
+          <h1 className="font-bold text-slate-900 text-xl">推理 Inference</h1>
           <div className="ml-auto flex items-center gap-4 text-sm text-slate-600">
+            {status.inference_active && (
+              <span
+                className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${
+                  status.bon_enabled
+                    ? "border-purple-200 bg-purple-50 text-purple-700"
+                    : status.rtc
+                      ? "border-blue-200 bg-blue-50 text-blue-700"
+                      : status.chunk_smooth
+                        ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                        : "border-slate-200 bg-slate-100 text-slate-500"
+                }`}
+                title={
+                  status.rtc
+                    ? `RTC 引导强度 ${status.rtc_guidance}（execution_horizon=20）`
+                    : status.chunk_smooth
+                      ? "动作 chunk 间 EMA 平滑"
+                      : "既不跑 RTC 也不做 chunk 平滑"
+                }
+              >
+                {status.bon_enabled
+                  ? "BoN"
+                  : status.rtc
+                    ? `RTC g=${Math.round(status.rtc_guidance ?? 0)}`
+                    : status.chunk_smooth
+                      ? `平滑 ${Math.round(status.chunk_smooth_strength ?? 0)}%`
+                      : "无平滑"}
+              </span>
+            )}
             <span className="truncate max-w-[320px]" title={status.policy_ref ?? ""}>
               {status.policy_ref ?? "(unknown)"}
             </span>

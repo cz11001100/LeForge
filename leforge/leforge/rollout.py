@@ -1423,6 +1423,13 @@ def handle_start_inference(request: InferenceRequest) -> dict[str, Any]:
             "rest_s": _ROUND_REST_S,
             "log_path": str(log_path),
             "cameras": dict(request.cameras),
+            # The two anti-jitter modes are mutually exclusive; the page shows
+            # which one this run actually asked for.
+            "rtc": bool(request.rtc),
+            "rtc_guidance": float(request.rtc_guidance),
+            "chunk_smooth": bool(request.chunk_smooth),
+            "chunk_smooth_strength": int(request.chunk_smooth_strength),
+            "bon_enabled": bool(request.bon_enabled),
             **capture_meta,
         }
         _inference_current_run = 1
@@ -1501,6 +1508,17 @@ def handle_stop_inference() -> dict[str, Any]:
         _inference_current_run = 0
     _stop_inference_cameras()
     return {"success": True, "message": "Inference stopped"}
+
+
+def _smoothing_status_fields(meta: dict[str, Any]) -> dict[str, Any]:
+    """Which smoothing path the running session asked for: RTC or chunk EMA."""
+    return {
+        "rtc": bool(meta.get("rtc")),
+        "rtc_guidance": meta.get("rtc_guidance"),
+        "chunk_smooth": bool(meta.get("chunk_smooth")),
+        "chunk_smooth_strength": meta.get("chunk_smooth_strength"),
+        "bon_enabled": bool(meta.get("bon_enabled")),
+    }
 
 
 def _capture_status_fields(meta: dict[str, Any]) -> dict[str, Any]:
@@ -1726,6 +1744,7 @@ def handle_inference_status() -> dict[str, Any]:
                 "camera_names": list(_inference_meta.get("cameras", {}).keys()),
                 "switching_round": True,
                 **_capture_status_fields(_inference_meta),
+                **_smoothing_status_fields(_inference_meta),
             }
         if proc is not None and proc.poll() is not None:
             rc = proc.returncode
@@ -1811,6 +1830,7 @@ def handle_inference_status() -> dict[str, Any]:
                         "total_runs": total_runs,
                         "camera_names": list(restart_req.cameras.keys()),
                         **_capture_status_fields(_inference_meta),
+                **_smoothing_status_fields(_inference_meta),
                     }
                 logger.warning("Auto-restart failed: %s", result.get("message"))
 
@@ -1854,6 +1874,7 @@ def handle_inference_status() -> dict[str, Any]:
                 "total_runs": total_runs,
                 "camera_names": list(finished_meta.get("cameras", {}).keys()),
                 **_capture_status_fields(finished_meta),
+                **_smoothing_status_fields(finished_meta),
             }
         elapsed = (time.time() - _inference_started_at) if _inference_started_at else 0
         rollout_elapsed = time.time() - _inference_rollout_started_at if _inference_rollout_started_at else 0
@@ -1870,6 +1891,7 @@ def handle_inference_status() -> dict[str, Any]:
             "total_runs": total_runs,
             "camera_names": list(_inference_meta.get("cameras", {}).keys()),
             **_capture_status_fields(_inference_meta),
+                **_smoothing_status_fields(_inference_meta),
         }
 
 

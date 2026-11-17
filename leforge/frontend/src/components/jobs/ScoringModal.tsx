@@ -22,7 +22,7 @@ const ScoringModal: React.FC<{
       <DialogContent className="bg-sky-100 border-sky-200 text-slate-900 sm:max-w-[1100px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-slate-900 text-center text-2xl font-bold">
-            数据集打分{datasetRepoId ? ` · ${datasetRepoId}` : ""}
+            数据集打分 Dataset Scoring{datasetRepoId ? ` · ${datasetRepoId}` : ""}
           </DialogTitle>
         </DialogHeader>
         <RolloutScoreCard initialRepoId={datasetRepoId ?? ""} />

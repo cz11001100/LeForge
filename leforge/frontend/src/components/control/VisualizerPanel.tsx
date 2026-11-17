@@ -39,7 +39,7 @@ const VisualizerPanel: React.FC<VisualizerPanelProps> = ({
           </Button>
           <Logo iconOnly={true} />
           <div className="w-px h-6 bg-sky-200" />
-          <h2 className="text-xl font-medium text-slate-800">Teleoperation</h2>
+          <h2 className="text-xl font-medium text-slate-800">遥操作 Teleoperation</h2>
           {headerExtra && <div className="ml-auto flex items-center gap-2">{headerExtra}</div>}
         </div>
         <div className="flex-1 bg-sky-50 rounded border border-sky-200 min-h-[50vh] lg:min-h-0">

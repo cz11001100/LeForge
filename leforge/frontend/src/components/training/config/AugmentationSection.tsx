@@ -38,12 +38,14 @@ const AugmentationSection: React.FC<ConfigComponentProps> = ({ config, updateCon
   const [previewLoading, setPreviewLoading] = useState(false);
   const [preview, setPreview] = useState<AugmentPreviewResult | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
+  const [showDiff, setShowDiff] = useState(false);
 
   const runPreview = async () => {
     setPreviewOpen(true);
     setPreviewLoading(true);
     setPreview(null);
     setPreviewError(null);
+    setShowDiff(false);
     try {
       const result = await getAugmentPreview(baseUrl, fetchWithHeaders, {
         repo_id: config.dataset_repo_id,
@@ -64,6 +66,9 @@ const AugmentationSection: React.FC<ConfigComponentProps> = ({ config, updateCon
       setPreviewLoading(false);
     }
   };
+
+  const hasDiffMaps =
+    preview?.per_transform?.every((t) => !!t.diff_image) ?? false;
 
   return (
     <section className="space-y-4">
@@ -143,7 +148,7 @@ const AugmentationSection: React.FC<ConfigComponentProps> = ({ config, updateCon
         <DialogContent className="bg-sky-100 border-sky-200 text-slate-900 sm:max-w-[860px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-slate-900 text-center text-xl font-bold">
-              增广预览{preview?.camera ? ` · ${preview.camera.replace('observation.images.', '')}` : ''}
+              增广预览 Augmentation Preview{preview?.camera ? ` · ${preview.camera.replace('observation.images.', '')}` : ''}
             </DialogTitle>
           </DialogHeader>
           {previewLoading && (
@@ -159,7 +164,23 @@ const AugmentationSection: React.FC<ConfigComponentProps> = ({ config, updateCon
           {preview && preview.original.length > 0 && (
             <div className="space-y-4">
               <div className="space-y-2">
-                <div className="text-xs text-slate-600">单项变换（最大强度，同一参考帧）</div>
+                <div className="flex items-center justify-between">
+                  <div className="text-xs text-slate-600">
+                    单项变换（最大强度，同一参考帧）
+                  </div>
+                  {hasDiffMaps && (
+                    <div className="flex items-center gap-2">
+                      <Switch
+                        id="aug_show_diff"
+                        checked={showDiff}
+                        onCheckedChange={setShowDiff}
+                      />
+                      <Label htmlFor="aug_show_diff" className="text-xs text-slate-600">
+                        差异图 ×8
+                      </Label>
+                    </div>
+                  )}
+                </div>
                 <div className="grid grid-cols-3 gap-3">
                   <div>
                     <img
@@ -172,12 +193,13 @@ const AugmentationSection: React.FC<ConfigComponentProps> = ({ config, updateCon
                   {preview.per_transform.map((t) => (
                     <div key={t.name}>
                       <img
-                        src={`data:image/jpeg;base64,${t.image}`}
+                        src={`data:image/jpeg;base64,${showDiff && t.diff_image ? t.diff_image : t.image}`}
                         alt={t.name}
                         className="w-full rounded-lg border border-cyan-300/50"
                       />
                       <div className="text-[11px] text-cyan-700 mt-1">
                         {TRANSFORM_LABELS[t.name] ?? t.name}
+                        {t.diff ? ` · Δ${t.diff.mean}/${t.diff.max}` : ''}
                       </div>
                     </div>
                   ))}
@@ -186,17 +208,24 @@ const AugmentationSection: React.FC<ConfigComponentProps> = ({ config, updateCon
               <div className="space-y-2">
                 <div className="text-xs text-slate-600">组合随机（训练时实际采样）</div>
                 {preview.original.map((orig, i) => (
-                  <div key={i} className="grid grid-cols-2 gap-3">
-                    <img
-                      src={`data:image/jpeg;base64,${orig}`}
-                      alt={`original ${i}`}
-                      className="w-full rounded-lg border border-sky-300"
-                    />
-                    <img
-                      src={`data:image/jpeg;base64,${preview.augmented[i]}`}
-                      alt={`augmented ${i}`}
-                      className="w-full rounded-lg border border-cyan-300/50"
-                    />
+                  <div key={i} className="space-y-1">
+                    <div className="grid grid-cols-2 gap-3">
+                      <img
+                        src={`data:image/jpeg;base64,${orig}`}
+                        alt={`original ${i}`}
+                        className="w-full rounded-lg border border-sky-300"
+                      />
+                      <img
+                        src={`data:image/jpeg;base64,${preview.augmented[i]}`}
+                        alt={`augmented ${i}`}
+                        className="w-full rounded-lg border border-cyan-300/50"
+                      />
+                    </div>
+                    {preview.pair_diffs?.[i] && (
+                      <div className="text-[11px] text-slate-600 text-right">
+                        Δ{preview.pair_diffs[i].mean}/{preview.pair_diffs[i].max}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

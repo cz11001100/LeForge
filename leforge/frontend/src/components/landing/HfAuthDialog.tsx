@@ -48,7 +48,7 @@ const HfAuthDialog: React.FC<HfAuthDialogProps> = ({ open, onOpenChange }) => {
       <DialogContent className="bg-sky-100 border-sky-200 text-slate-900">
         <DialogHeader>
           <DialogTitle className="text-amber-700">
-            Hugging Face CLI not configured
+            Hugging Face CLI 未配置
           </DialogTitle>
           <DialogDescription className="text-slate-600">
             Uploads, training, and replay-from-Hub require a logged-in HF CLI.

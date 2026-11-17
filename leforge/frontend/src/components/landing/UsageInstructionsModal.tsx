@@ -55,7 +55,7 @@ const UsageInstructionsModal: React.FC<UsageInstructionsModalProps> = ({
         <DialogHeader className="text-center sm:text-center min-w-0">
           <DialogTitle className="text-slate-900 flex items-center justify-center gap-2 text-xl">
             <Terminal className="w-6 h-6" />
-            Get Started with LeForge
+            LeForge 快速上手 Get Started with LeForge
           </DialogTitle>
           <DialogDescription>
             LeForge runs on your machine. Click the command to copy it, then paste

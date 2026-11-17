@@ -143,7 +143,7 @@ const TeleopCameraPanel: React.FC = () => {
   return (
     <div className="bg-sky-100 rounded-lg p-4 flex flex-col gap-4 h-full">
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-medium text-slate-800">Cameras</h2>
+        <h2 className="text-xl font-medium text-slate-800">相机 Cameras</h2>
         <div className="flex items-center gap-2">
           {enabled && feeds.length > 0 && (
             <Button

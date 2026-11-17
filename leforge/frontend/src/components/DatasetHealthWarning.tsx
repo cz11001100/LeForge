@@ -30,7 +30,7 @@ const DatasetHealthWarning: React.FC<DatasetHealthWarningProps> = ({
     <div className="flex items-center gap-3 mb-4">
       <AlertTriangle className="w-6 h-6 text-red-700 shrink-0" />
       <div>
-        <h3 className="text-lg font-semibold text-red-700">Dataset Corruption Detected</h3>
+        <h3 className="text-lg font-semibold text-red-700">检测到数据集损坏 Dataset Corruption Detected</h3>
         <p className="text-sm text-red-700/80">Some files are unreadable. The dataset may not load correctly.</p>
       </div>
     </div>

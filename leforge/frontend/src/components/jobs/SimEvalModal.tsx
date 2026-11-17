@@ -186,7 +186,7 @@ const SimEvalModal: React.FC<Props> = ({ open, onOpenChange, job, group }) => {
       <DialogContent className="bg-sky-100 border-sky-200 text-slate-900 sm:max-w-[860px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-slate-900 text-center text-2xl font-bold">
-            仿真评测
+            仿真评测 Simulation Evaluation
             {activeJob
               ? ` · ${members ? modelBaseName(activeJob.name) : activeJob.name}`
               : ""}

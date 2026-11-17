@@ -635,15 +635,15 @@ const JobsSection: React.FC = () => {
 
   return (
     <section className="space-y-6">
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="text-lg font-semibold text-slate-900 truncate">{greeting ?? ""}</h2>
-        <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-lg font-semibold text-slate-900">{greeting ?? ""}</h2>
+        <div className="flex flex-wrap items-center gap-2">
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-600 pointer-events-none" />
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search jobs…"
+              placeholder="搜索任务…"
               className="h-8 w-48 sm:w-60 pl-8 bg-sky-50/70 border-sky-300 text-sm text-slate-900 placeholder:text-slate-600"
               aria-label="Search jobs"
             />
@@ -673,7 +673,7 @@ const JobsSection: React.FC = () => {
             className="h-8 border-sky-300 bg-sky-50/70 text-slate-800 hover:text-slate-900"
           >
             <Download className="w-3.5 h-3.5 mr-1.5" />
-            Import Model
+            导入模型
           </Button>
           <Button
             variant="outline"
@@ -817,9 +817,9 @@ const JobsSection: React.FC = () => {
         </CollapsibleTrigger>
         <CollapsibleContent className="pt-3 space-y-4">
           {datasetsLoading ? (
-            <p className="text-sm text-slate-600">Loading datasets…</p>
+            <p className="text-sm text-slate-600">正在加载数据集…</p>
           ) : hubDatasets.length === 0 && localOnlyDatasets.length === 0 ? (
-            <p className="text-sm text-slate-600">No datasets yet.</p>
+            <p className="text-sm text-slate-600">暂无数据集。</p>
           ) : (
             <div className="space-y-4">
               {hubDatasets.length > 0 ? (

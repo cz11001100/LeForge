@@ -67,7 +67,7 @@ const MetricsPanel: React.FC<MetricsPanelProps> = ({
             <div className="space-y-4">
               {/* Webcam Feed */}
               <div className="border border-sky-200 rounded p-2 flex flex-col h-64">
-                <h3 className="text-sm text-slate-900 font-medium mb-2">Live Camera Feed</h3>
+                <h3 className="text-sm text-slate-900 font-medium mb-2">实时相机画面 Live Camera Feed</h3>
                 {hasPermissions ? (
                   <div className="flex-1 bg-sky-50 rounded overflow-hidden">
                     <video
@@ -91,7 +91,7 @@ const MetricsPanel: React.FC<MetricsPanelProps> = ({
               {/* Mic Detection & Other Sensors */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="border border-sky-200 rounded p-2 flex flex-col justify-center min-h-[120px]">
-                    <h3 className="text-sm text-center text-slate-900 font-medium mb-2">Voice Activity</h3>
+                    <h3 className="text-sm text-center text-slate-900 font-medium mb-2">语音活动 Voice Activity</h3>
                   {hasPermissions ? (
                     <div className="flex-1 flex flex-col items-center justify-center gap-2 text-center">
                       <div className="flex items-end h-10 gap-px w-full justify-center">
@@ -123,7 +123,7 @@ const MetricsPanel: React.FC<MetricsPanelProps> = ({
                 {/* Sensor Charts */}
                 {['sensor3', 'sensor4'].map((sensor, index) => (
                   <div key={sensor} className="border border-sky-200 rounded p-2 flex flex-col h-auto min-h-[120px]">
-                    <h3 className="text-sm text-slate-900 font-medium mb-2">Sensor {index + 3}</h3>
+                    <h3 className="text-sm text-slate-900 font-medium mb-2">传感器 Sensor {index + 3}</h3>
                     <ResponsiveContainer width="100%" height="90%">
                       <LineChart data={sensorData}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#bae6fd" />
@@ -155,7 +155,7 @@ const MetricsPanel: React.FC<MetricsPanelProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {['motor1', 'motor2', 'motor3', 'motor4', 'motor5', 'motor6'].map((motor, index) => (
                 <div key={motor} className="border border-sky-200 rounded p-2 h-40">
-                  <h3 className="text-sm text-slate-900 font-medium mb-2">Motor {index + 1}</h3>
+                  <h3 className="text-sm text-slate-900 font-medium mb-2">电机 Motor {index + 1}</h3>
                   <ResponsiveContainer width="100%" height="80%">
                     <LineChart data={motorData}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#bae6fd" />

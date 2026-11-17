@@ -17,7 +17,7 @@ const TrainingLogs: React.FC<TrainingLogsProps> = ({ logs, logContainerRef }) =>
           <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-sky-200">
             <FileText className="w-5 h-5 text-sky-700" />
           </div>
-          Training Logs
+          训练日志 Training Logs
         </CardTitle>
       </CardHeader>
       <CardContent>
