@@ -378,7 +378,7 @@ const Inference: React.FC = () => {
 
   if (!status) {
     return (
-      <div className="min-h-screen bg-sky-50 text-slate-900 flex items-center justify-center">
+      <div className="leforge-page min-h-screen text-slate-900 flex items-center justify-center">
         <Loader2 className="w-6 h-6 animate-spin mr-3" /> Connecting to inference…
       </div>
     );
@@ -507,8 +507,8 @@ const Inference: React.FC = () => {
   });
 
   return (
-    <div className="h-screen bg-sky-50 text-slate-900 p-6 flex flex-col overflow-hidden">
-      <div className="max-w-7xl w-full mx-auto flex-1 min-h-0 flex flex-col">
+    <div className="leforge-page h-screen text-slate-900 p-6 flex flex-col overflow-hidden">
+      <div className="max-w-[1680px] w-full mx-auto flex-1 min-h-0 flex flex-col">
         <div className="flex items-center gap-3 mb-3 flex-shrink-0">
           <Button
             variant="ghost"

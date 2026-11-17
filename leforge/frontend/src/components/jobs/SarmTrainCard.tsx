@@ -170,7 +170,7 @@ const SarmTrainCard: React.FC<{ initialRepoId?: string }> = ({ initialRepoId = "
         onClick={start}
         disabled={busy || !repoId || !sshConfigId}
         variant="outline"
-        className="border-sky-300 text-black hover:bg-sky-200 hover:text-black text-sm"
+        className="border-sky-300 text-slate-800 hover:bg-sky-200 hover:text-slate-800 text-sm"
       >
         {busy && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
         Train SARM on Pod

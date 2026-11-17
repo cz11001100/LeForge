@@ -278,7 +278,7 @@ const EvaluationCard: React.FC<{
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
           {variants && variants.length > 0 ? (
             <Field label="Checkpoint">
               <CheckpointDropdown

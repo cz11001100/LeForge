@@ -717,7 +717,7 @@ const RolloutScoreCard: React.FC<{ initialRepoId?: string }> = ({
               onClick={handleTest}
               disabled={!repoId || testing}
               variant="outline"
-              className="w-56 border-sky-300 text-black hover:bg-sky-200 hover:text-black text-sm"
+              className="w-56 border-sky-300 text-slate-800 hover:bg-sky-200 hover:text-slate-800 text-sm"
             >
               {testing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
               {testing ? "测试中…" : "Test"}
@@ -745,7 +745,7 @@ const RolloutScoreCard: React.FC<{ initialRepoId?: string }> = ({
                 onClick={handleExempt}
                 disabled={running}
                 variant="outline"
-                className="w-56 border-sky-300 text-black hover:bg-sky-200 hover:text-black text-sm"
+                className="w-56 border-sky-300 text-slate-800 hover:bg-sky-200 hover:text-slate-800 text-sm"
               >
                 Exempt Correction Segments
               </Button>
@@ -968,7 +968,7 @@ const RolloutScoreCard: React.FC<{ initialRepoId?: string }> = ({
                   variant="outline"
                   onClick={() => handlePromote("robometer")}
                   disabled={!!promoting}
-                  className="border-sky-300 text-black hover:bg-sky-200 hover:text-black text-xs"
+                  className="border-sky-300 text-slate-800 hover:bg-sky-200 hover:text-slate-800 text-xs"
                 >
                   {promoting === "robometer" && (
                     <Loader2 className="w-3 h-3 mr-1 animate-spin" />
@@ -980,7 +980,7 @@ const RolloutScoreCard: React.FC<{ initialRepoId?: string }> = ({
                   variant="outline"
                   onClick={() => handlePromote("sarm")}
                   disabled={!!promoting}
-                  className="border-sky-300 text-black hover:bg-sky-200 hover:text-black text-xs"
+                  className="border-sky-300 text-slate-800 hover:bg-sky-200 hover:text-slate-800 text-xs"
                 >
                   {promoting === "sarm" && <Loader2 className="w-3 h-3 mr-1 animate-spin" />}
                   Use SARM
@@ -1011,7 +1011,7 @@ const RolloutScoreCard: React.FC<{ initialRepoId?: string }> = ({
                       variant="outline"
                       onClick={() => handlePromote(b)}
                       disabled={!!promoting}
-                      className="border-sky-300 text-black hover:bg-sky-200 hover:text-black text-xs h-8"
+                      className="border-sky-300 text-slate-800 hover:bg-sky-200 hover:text-slate-800 text-xs h-8"
                     >
                       {promoting === b && <Loader2 className="w-3 h-3 mr-1 animate-spin" />}
                       Use {b === "robometer" ? "Robometer" : "SARM"}

@@ -88,7 +88,7 @@ const CandidateLogDialog: React.FC<{
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="bg-white border-sky-200 text-slate-900 sm:max-w-[720px] max-h-[80vh] overflow-y-auto">
+      <DialogContent className="bg-sky-50 border-sky-200 text-slate-900 sm:max-w-[720px] max-h-[80vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-slate-900">BoN 候选日志</DialogTitle>
         </DialogHeader>
@@ -99,7 +99,7 @@ const CandidateLogDialog: React.FC<{
             size="sm"
             onClick={load}
             disabled={loading}
-            className="ml-auto bg-white border-sky-200 text-slate-700 hover:bg-sky-50"
+            className="ml-auto bg-sky-50 border-sky-200 text-slate-700 hover:bg-sky-50"
           >
             {loading ? (
               <Loader2 className="w-3 h-3 mr-1 animate-spin" />
@@ -223,7 +223,7 @@ const RetrainDialog: React.FC<{
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="bg-white border-sky-200 text-slate-900 sm:max-w-[560px]">
+      <DialogContent className="bg-sky-50 border-sky-200 text-slate-900 sm:max-w-[560px]">
         <DialogHeader>
           <DialogTitle className="text-slate-900">回灌续训（数据飞轮）</DialogTitle>
         </DialogHeader>
@@ -239,10 +239,10 @@ const RetrainDialog: React.FC<{
           <div className="space-y-1">
             <span className="text-xs text-slate-500">源训练任务</span>
             <Select value={jobId} onValueChange={setJobId} disabled={running || busy}>
-              <SelectTrigger className="bg-white border-sky-200 text-slate-900 text-xs">
+              <SelectTrigger className="bg-sky-50 border-sky-200 text-slate-900 text-xs">
                 <SelectValue placeholder="选择要续训的任务" />
               </SelectTrigger>
-              <SelectContent className="bg-white border-sky-200 text-slate-900">
+              <SelectContent className="bg-sky-50 border-sky-200 text-slate-900">
                 {jobs.map((j) => (
                   <SelectItem key={j.id} value={j.id}>
                     {j.name} · {j.runner}
@@ -263,7 +263,7 @@ const RetrainDialog: React.FC<{
               onChange={(e) => setTarget(e.target.value)}
               placeholder="user/xxx_flywheel_1114_1200"
               disabled={running || busy}
-              className="bg-white border-sky-200 text-slate-900 text-xs"
+              className="bg-sky-50 border-sky-200 text-slate-900 text-xs"
             />
           </div>
           {status && status.phase !== "idle" && (
@@ -286,7 +286,7 @@ const RetrainDialog: React.FC<{
             <Button
               variant="outline"
               onClick={() => onOpenChange(false)}
-              className="bg-white border-sky-200 text-slate-700 hover:bg-sky-50"
+              className="bg-sky-50 border-sky-200 text-slate-700 hover:bg-sky-50"
             >
               关闭
             </Button>
@@ -342,7 +342,7 @@ const BonPanel: React.FC<Props> = ({ status, drawing, canDraw, onToggleDraw }) =
 
   const repoId = status.takeover?.repo_id ?? status.dataset_repo_id ?? "";
   const captureRepoAvailable = !!repoId;
-  const inputCls = "w-16 h-7 bg-white border-sky-200 text-slate-900 text-xs";
+  const inputCls = "w-16 h-7 bg-sky-50 border-sky-200 text-slate-900 text-xs";
 
   return (
     <div className="flex-shrink-0 mb-3 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-slate-700">
@@ -366,10 +366,10 @@ const BonPanel: React.FC<Props> = ({ status, drawing, canDraw, onToggleDraw }) =
               }}
               disabled={!enabled}
             >
-              <SelectTrigger className="h-7 w-24 bg-white border-sky-200 text-slate-900 text-xs">
+              <SelectTrigger className="h-7 w-24 bg-sky-50 border-sky-200 text-slate-900 text-xs">
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent className="bg-white border-sky-200 text-slate-900">
+              <SelectContent className="bg-sky-50 border-sky-200 text-slate-900">
                 <SelectItem value="bon">BoN</SelectItem>
                 <SelectItem value="greedy">greedy</SelectItem>
                 <SelectItem value="alternate">alternate 对照</SelectItem>
@@ -476,7 +476,7 @@ const BonPanel: React.FC<Props> = ({ status, drawing, canDraw, onToggleDraw }) =
           className={`h-7 border-sky-200 text-xs ${
             drawing
               ? "bg-amber-100 border-amber-400 text-amber-700"
-              : "bg-white text-slate-700 hover:bg-sky-50"
+              : "bg-sky-50 text-slate-700 hover:bg-sky-50"
           }`}
           title={`在 ${bon.camera ?? "up"} 画面上拖拽绘制目标框`}
         >
@@ -488,7 +488,7 @@ const BonPanel: React.FC<Props> = ({ status, drawing, canDraw, onToggleDraw }) =
           size="sm"
           onClick={() => setRetrainOpen(true)}
           disabled={!captureRepoAvailable}
-          className="h-7 bg-white border-sky-200 text-slate-700 hover:bg-sky-50 text-xs"
+          className="h-7 bg-sky-50 border-sky-200 text-slate-700 hover:bg-sky-50 text-xs"
           title="把采集集合并进训练集并续训"
         >
           回灌续训
@@ -497,7 +497,7 @@ const BonPanel: React.FC<Props> = ({ status, drawing, canDraw, onToggleDraw }) =
           variant="outline"
           size="sm"
           onClick={() => setLogOpen(true)}
-          className="h-7 bg-white border-sky-200 text-slate-700 hover:bg-sky-50 text-xs"
+          className="h-7 bg-sky-50 border-sky-200 text-slate-700 hover:bg-sky-50 text-xs"
         >
           候选日志
         </Button>

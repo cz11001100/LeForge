@@ -2,98 +2,59 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. */
+/* LeForge deep-blue forged glass theme. Fixed theme: no light/dark toggle. */
 
 @layer base {
   :root {
-    --background: 205 100% 94%;
-    --foreground: 215 35% 17%;
+    --background: 218 22% 8%;
+    --foreground: 210 18% 90%;
 
-    --card: 200 100% 96%;
-    --card-foreground: 215 35% 17%;
+    --card: 218 20% 14%;
+    --card-foreground: 210 18% 90%;
 
-    --popover: 200 100% 96%;
-    --popover-foreground: 215 35% 17%;
+    --popover: 218 20% 13%;
+    --popover-foreground: 210 18% 90%;
 
-    --primary: 205 90% 40%;
-    --primary-foreground: 0 0% 100%;
+    --primary: 205 60% 55%;
+    --primary-foreground: 218 30% 8%;
 
-    --secondary: 200 70% 88%;
-    --secondary-foreground: 215 35% 17%;
+    --secondary: 218 18% 20%;
+    --secondary-foreground: 210 18% 90%;
 
-    --muted: 200 65% 89%;
-    --muted-foreground: 215 20% 38%;
+    --muted: 218 18% 17%;
+    --muted-foreground: 215 15% 65%;
 
-    --accent: 199 85% 86%;
-    --accent-foreground: 215 35% 17%;
+    --accent: 205 35% 24%;
+    --accent-foreground: 210 18% 90%;
 
-    --destructive: 0 72% 51%;
+    --destructive: 0 70% 52%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 203 65% 80%;
-    --input: 203 65% 80%;
-    --ring: 205 90% 45%;
+    --border: 213 18% 28%;
+    --input: 213 18% 26%;
+    --ring: 205 60% 55%;
 
     --radius: 0.5rem;
 
-    --sidebar-background: 200 100% 96%;
-
-    --sidebar-foreground: 215 35% 17%;
-
-    --sidebar-primary: 205 90% 40%;
-
-    --sidebar-primary-foreground: 0 0% 100%;
-
-    --sidebar-accent: 199 85% 86%;
-
-    --sidebar-accent-foreground: 215 35% 17%;
-
-    --sidebar-border: 203 65% 80%;
-
-    --sidebar-ring: 205 90% 45%;
+    --sidebar-background: 218 22% 9%;
+    --sidebar-foreground: 210 18% 90%;
+    --sidebar-primary: 205 60% 55%;
+    --sidebar-primary-foreground: 218 30% 8%;
+    --sidebar-accent: 205 35% 24%;
+    --sidebar-accent-foreground: 210 18% 90%;
+    --sidebar-border: 213 18% 28%;
+    --sidebar-ring: 205 60% 55%;
   }
 
-  /* 浅蓝主题固定，不受系统深色模式影响 */
   .dark {
-    --background: 205 100% 94%;
-    --foreground: 215 35% 17%;
-
-    --card: 200 100% 96%;
-    --card-foreground: 215 35% 17%;
-
-    --popover: 200 100% 96%;
-    --popover-foreground: 215 35% 17%;
-
-    --primary: 205 90% 40%;
-    --primary-foreground: 0 0% 100%;
-
-    --secondary: 200 70% 88%;
-    --secondary-foreground: 215 35% 17%;
-
-    --muted: 200 65% 89%;
-    --muted-foreground: 215 20% 38%;
-
-    --accent: 199 85% 86%;
-    --accent-foreground: 215 35% 17%;
-
-    --destructive: 0 72% 51%;
-    --destructive-foreground: 0 0% 100%;
-
-    --border: 203 65% 80%;
-    --input: 203 65% 80%;
-    --ring: 205 90% 45%;
-    --sidebar-background: 200 100% 96%;
-    --sidebar-foreground: 215 35% 17%;
-    --sidebar-primary: 205 90% 40%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 199 85% 86%;
-    --sidebar-accent-foreground: 215 35% 17%;
-    --sidebar-border: 203 65% 80%;
-    --sidebar-ring: 205 90% 45%;
+    color-scheme: dark;
   }
-}
 
-@layer base {
+  html {
+    color-scheme: dark;
+    background-color: hsl(var(--background));
+  }
+
   * {
     @apply border-border;
   }
@@ -105,6 +66,141 @@
   }
 
   body {
-    @apply bg-background text-foreground;
+    @apply text-foreground;
+    background: transparent;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Wallpaper layer: the racing still, softened behind a deep navy wash. */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: -12px;
+    z-index: 0;
+    pointer-events: none;
+    background-image:
+      linear-gradient(180deg, hsl(218 30% 8% / 0.72), hsl(218 25% 5% / 0.9)),
+      url("/wallpaper.webp");
+    background-size: cover;
+    background-position: center;
+    filter: blur(2px) saturate(0.55) brightness(0.82);
+  }
+
+  #root {
+    position: relative;
+    z-index: 1;
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(213 35% 40%) transparent;
   }
 }
+
+/* Engineering-blueprint accents: the home control strip sits on a faint grid,
+   control tiles float above it, and the tiles rise in with a short stagger. */
+@layer utilities {
+  .leforge-page {
+    background-color: transparent;
+    background-image: linear-gradient(
+      180deg,
+      hsl(218 60% 6% / 0.12),
+      hsl(218 60% 5% / 0.34)
+    );
+  }
+
+  .leforge-blueprint {
+    background-image:
+      linear-gradient(to right, hsl(205 80% 80% / 0.07) 1px, transparent 1px),
+      linear-gradient(to bottom, hsl(205 80% 80% / 0.07) 1px, transparent 1px);
+    background-size: 26px 26px;
+  }
+
+  .forge-tile {
+    border-radius: 0.75rem;
+    border: 1px solid hsl(210 20% 70% / 0.12);
+    background: hsl(218 20% 15% / 0.52);
+    padding: 0.75rem;
+    box-shadow: 0 10px 28px -26px hsl(220 25% 2% / 0.8);
+    backdrop-filter: blur(18px) saturate(1.02);
+    transition:
+      transform 200ms ease,
+      box-shadow 200ms ease,
+      border-color 200ms ease;
+  }
+
+  .forge-tile:hover {
+    transform: translateY(-2px);
+    border-color: hsl(210 25% 70% / 0.2);
+    box-shadow: 0 14px 32px -26px hsl(220 25% 2% / 0.9);
+  }
+
+  .forge-rise > * {
+    animation: forge-rise 460ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  }
+
+  .forge-rise > *:nth-child(2) { animation-delay: 45ms; }
+  .forge-rise > *:nth-child(3) { animation-delay: 90ms; }
+  .forge-rise > *:nth-child(4) { animation-delay: 135ms; }
+  .forge-rise > *:nth-child(5) { animation-delay: 180ms; }
+  .forge-rise > *:nth-child(6) { animation-delay: 225ms; }
+}
+
+@keyframes forge-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .forge-rise > * {
+    animation: none;
+  }
+  .forge-tile {
+    transition: none;
+  }
+  .forge-tile:hover {
+    transform: none;
+  }
+}
+
+/* Accent copy that was tuned for light backgrounds needs a lighter tint on
+   deep blue surfaces. Backgrounds keep their vivid button colors. */
+.text-sky-700 { color: #a4c1db; }
+.text-blue-700 { color: #a5c1de; }
+.text-green-700 { color: #a6ceb5; }
+.text-purple-700 { color: #c4b2d9; }
+.text-red-700 { color: #d9a6ab; }
+.text-amber-700 { color: #d6c38f; }
+.text-yellow-700 { color: #d8cfa6; }
+.text-cyan-700 { color: #a3ced4; }
+.text-indigo-700 { color: #b4bfdc; }
+.text-orange-700 { color: #d6b896; }
+.text-emerald-700 { color: #a2cdba; }
+
+.text-blue-600 { color: #7fa9d1; }
+.text-green-600 { color: #8bc4a1; }
+.text-purple-600 { color: #b6a3d0; }
+.text-red-600 { color: #cf8f96; }
+.text-amber-600 { color: #c9b279; }
+.text-cyan-600 { color: #8bc1ca; }
+
+/* Keep hover states from falling back to the light-theme tints. */
+.hover\:text-red-700:hover { color: #d9a6ab; }
+.hover\:text-blue-700:hover { color: #a5c1de; }
+.hover\:text-green-700:hover { color: #a6ceb5; }
+.hover\:bg-red-100:hover { background-color: rgb(200 120 130 / 0.18); }
+.hover\:bg-amber-100:hover { background-color: rgb(200 170 110 / 0.16); }
+.hover\:bg-blue-100:hover { background-color: rgb(130 160 200 / 0.16); }
+.hover\:bg-green-100:hover { background-color: rgb(130 180 150 / 0.16); }
+/* Muted borders: blue rails guide the eye without glowing. */
+.border-sky-200 { border-color: hsl(212 20% 70% / 0.08); }
+.border-sky-300 { border-color: hsl(212 20% 70% / 0.12); }
+.border-sky-300\/60 { border-color: hsl(212 20% 70% / 0.08); }
+.border-sky-400 { border-color: hsl(210 30% 70% / 0.2); }

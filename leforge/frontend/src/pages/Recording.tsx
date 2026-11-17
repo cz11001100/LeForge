@@ -8,6 +8,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
+import Logo from "@/components/Logo";
 import {
   ArrowLeft,
   MoreHorizontal,
@@ -498,11 +499,11 @@ const Recording = () => {
 
   if (!recordingConfig) {
     return (
-      <div className="min-h-screen bg-sky-50 text-slate-900 flex items-center justify-center">
+      <div className="leforge-page min-h-screen text-slate-900 flex items-center justify-center">
         <div className="text-center">
-          <p className="text-lg">No recording configuration found.</p>
+          <p className="text-lg">未找到录制配置。</p>
           <Button onClick={() => navigate("/")} className="mt-4">
-            Return to Home
+            返回首页
           </Button>
         </div>
       </div>
@@ -512,7 +513,7 @@ const Recording = () => {
   // Show loading state while waiting for backend status
   if (!backendStatus) {
     return (
-      <div className="min-h-screen bg-sky-50 text-slate-900 flex items-center justify-center">
+      <div className="leforge-page min-h-screen text-slate-900 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-500 mx-auto mb-4"></div>
           <p className="text-lg">Connecting to recording session...</p>
@@ -563,17 +564,19 @@ const Recording = () => {
   const PrimaryIcon = currentPhase === "recording" ? SkipForward : Play;
 
   return (
-    <div className="h-screen bg-sky-50 text-slate-900 p-6 flex flex-col overflow-hidden">
-      <div className="max-w-7xl w-full mx-auto flex-1 min-h-0 flex flex-col">
-        <div className="mb-3 flex-shrink-0">
+    <div className="leforge-page h-screen text-slate-900 p-6 flex flex-col overflow-hidden">
+      <div className="max-w-[1680px] w-full mx-auto flex-1 min-h-0 flex flex-col">
+        <div className="mb-3 flex flex-shrink-0 items-center gap-3">
           <Button
             onClick={() => navigate("/")}
             variant="outline"
             className="border-sky-400 hover:border-gray-200 text-slate-700 hover:text-slate-900"
           >
             <ArrowLeft className="w-4 h-4 mr-2" />
-            Back to Home
+            返回首页
           </Button>
+          <Logo />
+          <h1 className="text-xl font-bold tracking-tight text-slate-900">录制 Recording</h1>
         </div>
 
         <div className="bg-sky-100 rounded-lg border border-sky-300 p-6 flex-1 min-h-0 flex flex-col justify-center">

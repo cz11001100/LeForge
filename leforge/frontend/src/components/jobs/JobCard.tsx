@@ -475,7 +475,7 @@ const JobCard: React.FC<Props> = ({ job: jobProp, group, onStop, onDelete, onPla
   return (
     <Card
       onClick={() => navigate(`/training/${job.id}`)}
-      className={`bg-sky-50/70 border-sky-300 rounded-xl transition-colors cursor-pointer hover:border-sky-400`}
+      className={`bg-sky-50/70 backdrop-blur-xl border-sky-300 rounded-xl transition-all duration-200 cursor-pointer hover:-translate-y-0.5 hover:border-sky-400 hover:shadow-md hover:shadow-sky-900/10`}
     >
       <CardContent className="p-4 space-y-2">
         <div className="flex items-center justify-between gap-2">

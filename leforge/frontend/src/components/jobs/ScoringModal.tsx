@@ -2,9 +2,11 @@ import React from "react";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Gauge } from "lucide-react";
 import RolloutScoreCard from "@/components/jobs/RolloutScoreCard";
 
 /**
@@ -19,13 +21,25 @@ const ScoringModal: React.FC<{
 }> = ({ open, onOpenChange, datasetRepoId }) => {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="bg-sky-100 border-sky-200 text-slate-900 sm:max-w-[1100px] max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="text-slate-900 text-center text-2xl font-bold">
-            数据集打分 Dataset Scoring{datasetRepoId ? ` · ${datasetRepoId}` : ""}
-          </DialogTitle>
+      <DialogContent className="flex w-[calc(100%-1.5rem)] max-h-[90vh] flex-col gap-0 overflow-hidden border-sky-200 bg-sky-100/85 p-0 text-slate-900 sm:max-w-[1280px]">
+        <DialogHeader className="shrink-0 border-b border-sky-200 px-6 py-4">
+          <div className="flex items-center gap-3 pr-8 text-left">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-100">
+              <Gauge className="h-4 w-4 text-indigo-700" />
+            </div>
+            <div className="min-w-0">
+              <DialogTitle className="text-left text-xl font-bold">
+                数据集打分 Dataset Scoring{datasetRepoId ? ` · ${datasetRepoId}` : ""}
+              </DialogTitle>
+              <DialogDescription className="text-left text-sm text-slate-600">
+                查看打分进度、成功率与接管率。
+              </DialogDescription>
+            </div>
+          </div>
         </DialogHeader>
-        <RolloutScoreCard initialRepoId={datasetRepoId ?? ""} />
+        <div className="flex-1 overflow-y-auto px-6 py-5">
+          <RolloutScoreCard initialRepoId={datasetRepoId ?? ""} />
+        </div>
       </DialogContent>
     </Dialog>
   );

@@ -390,8 +390,8 @@ const ConfigurationMode: React.FC = () => {
 
   if (trainingExtraAvailable === null) {
     return (
-      <div className="min-h-screen bg-sky-100 text-slate-900 p-4">
-        <div className="max-w-7xl mx-auto">
+      <div className="leforge-page min-h-screen text-slate-900 p-4 lg:p-8">
+        <div className="max-w-[1440px] mx-auto">
           <TrainingHeader />
           <div className="flex items-center justify-center py-24 text-slate-600">
             <Loader2 className="w-6 h-6 animate-spin mr-3" />
@@ -404,8 +404,8 @@ const ConfigurationMode: React.FC = () => {
 
   if (trainingExtraAvailable === false) {
     return (
-      <div className="min-h-screen bg-sky-100 text-slate-900 p-4">
-        <div className="max-w-7xl mx-auto">
+      <div className="leforge-page min-h-screen text-slate-900 p-4 lg:p-8">
+        <div className="max-w-[1440px] mx-auto">
           <TrainingHeader />
           <TrainingExtraGate installHint={trainingExtraInstallHint} />
         </div>
@@ -438,8 +438,8 @@ const ConfigurationMode: React.FC = () => {
     : undefined;
 
   return (
-    <div className="min-h-screen bg-sky-100 text-slate-900 p-4">
-      <div className="max-w-7xl mx-auto">
+    <div className="leforge-page min-h-screen text-slate-900 p-4 lg:p-8">
+      <div className="max-w-[1440px] mx-auto">
         <TrainingHeader />
         <HfAuthBanner />
         <ConfigurationTab
@@ -453,7 +453,7 @@ const ConfigurationMode: React.FC = () => {
           sshConfigs={sshConfigs}
           sshConfigsLoading={sshConfigsLoading}
         />
-        <div className="max-w-3xl mx-auto mt-6">
+        <div className="max-w-[1360px] mx-auto mt-6">
           {upload?.interrupted && !upload?.active && (
             <p className="mb-2 text-xs text-amber-700">
               上次 checkpoint 上传被中断（服务重启），需要重新点 Start Training。
@@ -479,7 +479,7 @@ const ConfigurationMode: React.FC = () => {
                   size="sm"
                   variant="outline"
                   onClick={handleCancelUpload}
-                  className="h-6 border-sky-300 px-2 text-[11px] text-black hover:bg-sky-200 hover:text-black"
+                  className="h-6 border-sky-300 px-2 text-[11px] text-slate-800 hover:bg-sky-200 hover:text-slate-800"
                 >
                   取消上传
                 </Button>
@@ -734,8 +734,8 @@ const MonitoringMode: React.FC<{ jobId: string }> = ({ jobId }) => {
 
   if (error && !job) {
     return (
-      <div className="min-h-screen bg-sky-100 text-slate-900 p-4">
-        <div className="max-w-7xl mx-auto space-y-4">
+      <div className="leforge-page min-h-screen text-slate-900 p-4 lg:p-8">
+        <div className="max-w-[1440px] mx-auto space-y-4">
           <Button variant="ghost" onClick={() => navigate("/")} className="text-slate-600">
             <ArrowLeft className="w-4 h-4 mr-2" /> Back to Jobs
           </Button>
@@ -747,8 +747,8 @@ const MonitoringMode: React.FC<{ jobId: string }> = ({ jobId }) => {
 
   if (!job) {
     return (
-      <div className="min-h-screen bg-sky-100 text-slate-900 p-4">
-        <div className="max-w-7xl mx-auto flex items-center justify-center py-24 text-slate-600">
+      <div className="leforge-page min-h-screen text-slate-900 p-4 lg:p-8">
+        <div className="max-w-[1440px] mx-auto flex items-center justify-center py-24 text-slate-600">
           <Loader2 className="w-6 h-6 animate-spin mr-3" /> Loading job…
         </div>
       </div>
@@ -760,8 +760,8 @@ const MonitoringMode: React.FC<{ jobId: string }> = ({ jobId }) => {
   const canValidate = !isRunning && job.checkpoint_count > 0;
 
   return (
-    <div className="min-h-screen bg-sky-100 text-slate-900 p-4">
-      <div className="max-w-7xl mx-auto space-y-6">
+    <div className="leforge-page min-h-screen text-slate-900 p-4 lg:p-8">
+      <div className="max-w-[1440px] mx-auto space-y-6">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Button variant="ghost" onClick={() => navigate("/")} className="text-slate-600 hover:text-slate-900">

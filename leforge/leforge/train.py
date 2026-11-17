@@ -285,16 +285,21 @@ def augmentation_tfs(request) -> dict:
     preview shows exactly what training will apply.
     """
     tfs: dict = {}
+    # Photometric ranges widened past lerobot's defaults: at 0.8-1.2 / 0.5-1.5
+    # sharpness moved ~0.4/255 and saturation ~7/255, i.e. invisible in the
+    # preview and near-zero during training. Hue and affine stay conservative:
+    # hue would break the red/blue object semantics, affine aliases with the
+    # arm's own motion.
     if request.augmentation_brightness:
-        tfs["brightness"] = {"weight": 1.0, "type": "ColorJitter", "kwargs": {"brightness": [0.8, 1.2]}}
+        tfs["brightness"] = {"weight": 1.0, "type": "ColorJitter", "kwargs": {"brightness": [0.7, 1.3]}}
     if request.augmentation_contrast:
-        tfs["contrast"] = {"weight": 1.0, "type": "ColorJitter", "kwargs": {"contrast": [0.8, 1.2]}}
+        tfs["contrast"] = {"weight": 1.0, "type": "ColorJitter", "kwargs": {"contrast": [0.7, 1.3]}}
     if request.augmentation_saturation:
-        tfs["saturation"] = {"weight": 1.0, "type": "ColorJitter", "kwargs": {"saturation": [0.5, 1.5]}}
+        tfs["saturation"] = {"weight": 1.0, "type": "ColorJitter", "kwargs": {"saturation": [0.4, 1.6]}}
     if request.augmentation_hue:
         tfs["hue"] = {"weight": 1.0, "type": "ColorJitter", "kwargs": {"hue": [-0.05, 0.05]}}
     if request.augmentation_sharpness:
-        tfs["sharpness"] = {"weight": 1.0, "type": "SharpnessJitter", "kwargs": {"sharpness": [0.5, 1.5]}}
+        tfs["sharpness"] = {"weight": 1.0, "type": "SharpnessJitter", "kwargs": {"sharpness": [0.3, 1.8]}}
     if request.augmentation_affine:
         tfs["affine"] = {"weight": 1.0, "type": "RandomAffine", "kwargs": {"degrees": [-5.0, 5.0], "translate": [0.05, 0.05]}}
     return tfs

@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -183,16 +184,27 @@ const SimEvalModal: React.FC<Props> = ({ open, onOpenChange, job, group }) => {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="bg-sky-100 border-sky-200 text-slate-900 sm:max-w-[860px] max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="text-slate-900 text-center text-2xl font-bold">
-            仿真评测 Simulation Evaluation
-            {activeJob
-              ? ` · ${members ? modelBaseName(activeJob.name) : activeJob.name}`
-              : ""}
-          </DialogTitle>
+      <DialogContent className="flex w-[calc(100%-1.5rem)] max-h-[90vh] flex-col gap-0 overflow-hidden border-sky-200 bg-sky-100/85 p-0 text-slate-900 sm:max-w-[1200px]">
+        <DialogHeader className="shrink-0 border-b border-sky-200 px-6 py-4">
+          <div className="flex items-center gap-3 pr-8 text-left">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-cyan-100">
+              <Boxes className="h-4 w-4 text-cyan-700" />
+            </div>
+            <div className="min-w-0">
+              <DialogTitle className="text-left text-xl font-bold">
+                仿真评测 Simulation Evaluation
+                {activeJob
+                  ? ` · ${members ? modelBaseName(activeJob.name) : activeJob.name}`
+                  : ""}
+              </DialogTitle>
+              <DialogDescription className="text-left text-sm text-slate-600">
+                在仿真环境中回放策略并统计成功率。
+              </DialogDescription>
+            </div>
+          </div>
         </DialogHeader>
 
+        <div className="flex-1 space-y-4 overflow-y-auto px-6 py-5">
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
           {variants && variants.length > 0 ? (
             <Field label="Checkpoint">
@@ -391,6 +403,7 @@ const SimEvalModal: React.FC<Props> = ({ open, onOpenChange, job, group }) => {
             </div>
           </div>
         ) : null}
+        </div>
       </DialogContent>
     </Dialog>
   );

@@ -22,6 +22,7 @@ import {
   startDatasetRepair,
 } from "@/lib/replayApi";
 import type { DatasetHealth, RepairProgress } from "@/lib/replayApi";
+import Logo from "@/components/Logo";
 import DatasetHealthWarning from "@/components/DatasetHealthWarning";
 import DatasetSummaryCard from "@/components/DatasetSummaryCard";
 import { compareRolloutProgress } from "@/lib/rolloutEvalApi";
@@ -588,7 +589,7 @@ const Upload = () => {
   // Show loading state while fetching dataset info
   if (isLoadingDatasetInfo) {
     return (
-      <div className="min-h-screen bg-sky-50 text-slate-900 flex items-center justify-center">
+      <div className="leforge-page min-h-screen text-slate-900 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
           <p className="text-lg">正在加载数据集信息…</p>
@@ -601,8 +602,8 @@ const Upload = () => {
   // selection of its own, so don't hold it behind a dataset detail view.
   if (!datasetInfo) {
     return (
-      <div className="min-h-screen bg-sky-50 text-slate-900 p-8">
-        <div className="max-w-4xl mx-auto">
+      <div className="leforge-page min-h-screen text-slate-900 p-8">
+        <div className="max-w-[1360px] mx-auto">
           <div className="flex items-center gap-4 mb-6">
             <Button
               onClick={() => navigate("/")}
@@ -612,7 +613,8 @@ const Upload = () => {
               <ArrowLeft className="w-4 h-4 mr-2" />
               返回首页
             </Button>
-            <h1 className="text-3xl font-bold">数据集 Datasets</h1>
+            <Logo iconOnly />
+            <h1 className="text-3xl font-bold tracking-tight">数据集 Datasets</h1>
           </div>
           <DatasetTransferSection />
           <MergeSection />
@@ -653,8 +655,8 @@ const Upload = () => {
           };
 
   return (
-    <div className="min-h-screen bg-sky-50 text-slate-900 p-8">
-      <div className="max-w-4xl mx-auto">
+    <div className="leforge-page min-h-screen text-slate-900 p-8">
+      <div className="max-w-[1360px] mx-auto">
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center gap-3">

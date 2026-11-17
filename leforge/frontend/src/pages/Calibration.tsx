@@ -527,8 +527,8 @@ const Calibration = () => {
   const statusDisplay = getStatusDisplay();
 
   return (
-    <div className="min-h-screen bg-sky-100 text-slate-900 p-4">
-      <div className="max-w-4xl mx-auto">
+    <div className="leforge-page min-h-screen text-slate-900 p-4 lg:p-8">
+      <div className="max-w-[1200px] mx-auto">
         <div className="flex items-center gap-4 mb-6">
           <Button
             variant="ghost"
@@ -557,7 +557,7 @@ const Calibration = () => {
           </Alert>
         )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 items-start lg:grid-cols-2 gap-6">
           <Card className="bg-sky-50/70 border-sky-300 backdrop-blur-sm">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-slate-800">

@@ -29,23 +29,27 @@ const ConfigurationTab: React.FC<ConfigurationTabProps> = ({
   sshConfigsLoading,
 }) => {
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
-      <TargetCard
-        config={config}
-        updateConfig={updateConfig}
-        authenticated={authenticated}
-        flavors={flavors}
-        loading={hardwareLoading}
-        sshConfigs={sshConfigs}
-        sshConfigsLoading={sshConfigsLoading}
-      />
-      <EssentialsCard
-        config={config}
-        updateConfig={updateConfig}
-        datasets={datasets}
-        datasetsLoading={datasetsLoading}
-      />
-      <GrootCard config={config} updateConfig={updateConfig} />
+    <div className="mx-auto max-w-[1360px] space-y-6">
+      <div className="grid gap-6 xl:grid-cols-2 xl:items-start">
+        <TargetCard
+          config={config}
+          updateConfig={updateConfig}
+          authenticated={authenticated}
+          flavors={flavors}
+          loading={hardwareLoading}
+          sshConfigs={sshConfigs}
+          sshConfigsLoading={sshConfigsLoading}
+        />
+        <div className="space-y-6">
+          <EssentialsCard
+            config={config}
+            updateConfig={updateConfig}
+            datasets={datasets}
+            datasetsLoading={datasetsLoading}
+          />
+          <GrootCard config={config} updateConfig={updateConfig} />
+        </div>
+      </div>
       <AdvancedCard config={config} updateConfig={updateConfig} />
     </div>
   );
