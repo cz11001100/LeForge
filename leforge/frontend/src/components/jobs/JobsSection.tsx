@@ -10,6 +10,7 @@ import {
   HubModel,
   JobProgressSnapshot,
   JobRecord,
+  SSHConfig,
   SSHStatus,
   deleteJob,
   discoverRemoteJobs,
@@ -31,6 +32,13 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   CalendarDays,
   ChevronRight,
@@ -237,6 +245,16 @@ const JobsSection: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [scanning, setScanning] = useState(false);
+  const [sshConfigs, setSshConfigs] = useState<SSHConfig[]>([]);
+
+  // Connections are listed up front so scanning can target any pod — runs
+  // started by someone else on a pod this machine never trained on are the
+  // main thing this scan is for.
+  useEffect(() => {
+    listSSHConfigs(baseUrl, fetchWithHeaders)
+      .then(setSshConfigs)
+      .catch(() => {});
+  }, [baseUrl, fetchWithHeaders]);
 
   const { selectedRecord } = useRobots();
   // Datasets for the DATASETS section: Hub-uploaded ones shown, local-only
@@ -393,60 +411,32 @@ const JobsSection: React.FC = () => {
 
   useJobsChangedSignal(refresh, applyProgress);
 
-  // A pod can hold runs launched from another computer; those have no local
-  // job.json, so scan the SSH target behind the most recent job. Scanning every
-  // saved connection drowns the result in dead pods' SSH errors.
-  const handleScanRemote = async () => {
+  // A pod can hold runs launched by someone else; those have no local
+  // job.json. The caller picks which connection to scan — the point is to find
+  // runs on a pod this machine never trained on.
+  const handleScanRemote = async (configId: string) => {
     setScanning(true);
     try {
-      const recent = jobs
-        .filter((j) => j.ssh_config_id)
-        .sort((a, b) => (b.started_at ?? 0) - (a.started_at ?? 0))[0];
-      if (!recent?.ssh_config_id) {
-        toast({ title: "还没有使用过 SSH 连接", description: "先发起一次云端训练或检查环境" });
-        return;
-      }
-      const all = await listSSHConfigs(baseUrl, fetchWithHeaders);
-      const cfg = all.find((c) => c.id === recent.ssh_config_id);
-      if (!cfg) {
+      const cfg = sshConfigs.find((c) => c.id === configId);
+      const res = await discoverRemoteJobs(baseUrl, fetchWithHeaders, configId);
+      if (res.discovered > 0) {
         toast({
-          title: "最近连接已删除",
-          description: "最近一次训练使用的 SSH 连接已被删除，无法扫描",
-          variant: "destructive",
+          title: `发现 ${res.discovered} 个云端任务`,
+          description: "已加入任务列表，可下载其 checkpoint",
         });
-        return;
-      }
-      const configs = [cfg];
-      let discovered = 0;
-      let scanned = 0;
-      const failures: string[] = [];
-      for (const cfg of configs) {
-        try {
-          const res = await discoverRemoteJobs(baseUrl, fetchWithHeaders, cfg.id);
-          discovered += res.discovered;
-          scanned += res.scanned ?? 0;
-        } catch (e) {
-          failures.push(`${cfg.name}: ${e instanceof Error ? e.message : String(e)}`);
-        }
-      }
-      if (discovered > 0) {
-        toast({ title: `发现 ${discovered} 个云端任务`, description: "已加入任务列表，可下载其 checkpoint" });
         refresh();
-      } else if (scanned > 0) {
+      } else if ((res.scanned ?? 0) > 0) {
         toast({
           title: "没有新任务",
-          description: `远端扫描到 ${scanned} 个训练运行，本机都已登记过`,
+          description: `远端扫描到 ${res.scanned} 个训练运行，本机都已登记过`,
         });
       } else {
         toast({ title: "远端没有找到训练任务" });
       }
-      if (failures.length > 0) {
-        toast({ title: "部分连接扫描失败", description: failures.join("；"), variant: "destructive" });
-      }
     } catch (e) {
       toast({
         title: "扫描失败",
-        description: e instanceof Error ? e.message : String(e),
+        description: `${cfg?.name ?? configId}: ${e instanceof Error ? e.message : String(e)}`,
         variant: "destructive",
       });
     } finally {
@@ -708,21 +698,50 @@ const JobsSection: React.FC = () => {
             <Download className="w-3.5 h-3.5 mr-1.5" />
             导入模型
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleScanRemote}
-            disabled={scanning}
-            className="h-8 border-sky-300 bg-sky-50/70 text-slate-800 hover:text-slate-900"
-            title="扫描最近一次使用过的 SSH 连接，把别的电脑发起的训练任务登记到本机"
-          >
-            {scanning ? (
-              <RefreshCw className="w-3.5 h-3.5 mr-1.5 animate-spin" />
-            ) : (
-              <CloudDownload className="w-3.5 h-3.5 mr-1.5" />
-            )}
-            扫描云端任务
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={scanning}
+                className="h-8 border-sky-300 bg-sky-50/70 text-slate-800 hover:text-slate-900"
+                title="选择一台 pod 扫描：列出该 pod 上所有训练运行（包括别人启动的）"
+              >
+                {scanning ? (
+                  <RefreshCw className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                ) : (
+                  <CloudDownload className="w-3.5 h-3.5 mr-1.5" />
+                )}
+                扫描云端任务
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="end"
+              className="bg-white border-sky-200 text-slate-800 min-w-[240px]"
+            >
+              <DropdownMenuLabel className="text-xs text-slate-500">
+                选择要扫描的连接
+              </DropdownMenuLabel>
+              {sshConfigs.length === 0 ? (
+                <DropdownMenuItem disabled className="text-xs text-slate-500">
+                  还没有保存的 SSH 连接
+                </DropdownMenuItem>
+              ) : (
+                sshConfigs.map((c) => (
+                  <DropdownMenuItem
+                    key={c.id}
+                    onClick={() => handleScanRemote(c.id)}
+                    className="flex flex-col items-start gap-0.5"
+                  >
+                    <span className="text-sm">{c.name}</span>
+                    <span className="text-[11px] text-slate-500">
+                      {c.username}@{c.host}:{c.port}
+                    </span>
+                  </DropdownMenuItem>
+                ))
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Button
             variant="ghost"
             size="icon"
