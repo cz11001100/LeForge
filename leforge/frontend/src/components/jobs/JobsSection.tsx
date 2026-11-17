@@ -113,7 +113,7 @@ const DatasetCard: React.FC<{
   return (
     <Card
       onClick={() => onOpen(d.repo_id)}
-      className="bg-sky-50/70 border-sky-300 rounded-xl transition-colors cursor-pointer hover:border-sky-400"
+      className="bg-sky-50/70 backdrop-blur-xl border-sky-300 rounded-xl transition-all duration-200 cursor-pointer hover:-translate-y-0.5 hover:border-sky-400 hover:shadow-md hover:shadow-sky-900/10"
     >
       <CardContent className="p-4 space-y-2">
         <div className="flex items-center justify-between gap-2">
@@ -635,15 +635,23 @@ const JobsSection: React.FC = () => {
 
   return (
     <section className="space-y-6">
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="text-lg font-semibold text-slate-900 truncate">{greeting ?? ""}</h2>
-        <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <span
+            aria-hidden="true"
+            className="h-6 w-1 shrink-0 rounded-full bg-gradient-to-b from-sky-500 to-cyan-400"
+          />
+          <h2 className="text-xl font-semibold tracking-tight text-slate-900">
+            {greeting ?? ""}
+          </h2>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-600 pointer-events-none" />
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search jobs…"
+              placeholder="搜索任务…"
               className="h-8 w-48 sm:w-60 pl-8 bg-sky-50/70 border-sky-300 text-sm text-slate-900 placeholder:text-slate-600"
               aria-label="Search jobs"
             />
@@ -673,7 +681,7 @@ const JobsSection: React.FC = () => {
             className="h-8 border-sky-300 bg-sky-50/70 text-slate-800 hover:text-slate-900"
           >
             <Download className="w-3.5 h-3.5 mr-1.5" />
-            Import Model
+            导入模型
           </Button>
           <Button
             variant="outline"
@@ -707,6 +715,10 @@ const JobsSection: React.FC = () => {
       <Collapsible defaultOpen>
         <CollapsibleTrigger className="group flex items-center gap-1.5 text-sm font-semibold uppercase tracking-wide text-slate-600 hover:text-slate-900 transition-colors">
           <ChevronRight className="w-3.5 h-3.5 transition-transform group-data-[state=open]:rotate-90" />
+          <span
+            aria-hidden="true"
+            className="h-1.5 w-1.5 rounded-[2px] bg-sky-500"
+          />
           任务 Jobs (
           {localActive.length +
             sshActive.length +
@@ -727,7 +739,7 @@ const JobsSection: React.FC = () => {
                 : "暂无任务；可在训练页发起。"}
             </p>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 min-[1800px]:grid-cols-5 gap-4">
               {localActive.map((job) => (
                 <JobCard
                   key={job.id}
@@ -784,10 +796,14 @@ const JobsSection: React.FC = () => {
           <Collapsible defaultOpen>
             <CollapsibleTrigger className="group flex items-center gap-1.5 text-sm font-semibold uppercase tracking-wide text-slate-600 hover:text-slate-900 transition-colors">
               <ChevronRight className="w-3.5 h-3.5 transition-transform group-data-[state=open]:rotate-90" />
+          <span
+            aria-hidden="true"
+            className="h-1.5 w-1.5 rounded-[2px] bg-sky-500"
+          />
               模型 Models ({importedJobs.length})
             </CollapsibleTrigger>
             <CollapsibleContent className="pt-3">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 min-[1800px]:grid-cols-5 gap-4">
                 {importedGroups.map((g) => (
                   <JobCard
                     key={g.members[0].id}
@@ -813,17 +829,21 @@ const JobsSection: React.FC = () => {
       <Collapsible defaultOpen>
         <CollapsibleTrigger className="group flex items-center gap-1.5 text-sm font-semibold uppercase tracking-wide text-slate-600 hover:text-slate-900 transition-colors">
           <ChevronRight className="w-3.5 h-3.5 transition-transform group-data-[state=open]:rotate-90" />
+          <span
+            aria-hidden="true"
+            className="h-1.5 w-1.5 rounded-[2px] bg-sky-500"
+          />
           数据集 DATASETS
         </CollapsibleTrigger>
         <CollapsibleContent className="pt-3 space-y-4">
           {datasetsLoading ? (
-            <p className="text-sm text-slate-600">Loading datasets…</p>
+            <p className="text-sm text-slate-600">正在加载数据集…</p>
           ) : hubDatasets.length === 0 && localOnlyDatasets.length === 0 ? (
-            <p className="text-sm text-slate-600">No datasets yet.</p>
+            <p className="text-sm text-slate-600">暂无数据集。</p>
           ) : (
             <div className="space-y-4">
               {hubDatasets.length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 min-[1800px]:grid-cols-5 gap-4">
                   {hubDatasets.map((d) => (
                     <DatasetCard
                       key={d.repo_id}
@@ -840,10 +860,14 @@ const JobsSection: React.FC = () => {
                 <Collapsible defaultOpen={false}>
                   <CollapsibleTrigger className="group flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-600 hover:text-slate-700 transition-colors">
                     <ChevronRight className="w-3.5 h-3.5 transition-transform group-data-[state=open]:rotate-90" />
+          <span
+            aria-hidden="true"
+            className="h-1.5 w-1.5 rounded-[2px] bg-sky-500"
+          />
                     其他数据集 Local only ({localOnlyDatasets.length})
                   </CollapsibleTrigger>
                   <CollapsibleContent className="pt-3">
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 min-[1800px]:grid-cols-5 gap-4">
                       {localOnlyDatasets.map((d) => (
                         <DatasetCard
                           key={d.repo_id}
@@ -866,10 +890,14 @@ const JobsSection: React.FC = () => {
         <Collapsible>
           <CollapsibleTrigger className="group flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-600 hover:text-slate-900 transition-colors">
             <ChevronRight className="w-3.5 h-3.5 transition-transform group-data-[state=open]:rotate-90" />
+          <span
+            aria-hidden="true"
+            className="h-1.5 w-1.5 rounded-[2px] bg-sky-500"
+          />
             未跟踪 Untracked ({untrackedCount})
           </CollapsibleTrigger>
           <CollapsibleContent className="pt-3">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
               {localUntracked.map((job) => (
                 <JobCard
                   key={job.id}

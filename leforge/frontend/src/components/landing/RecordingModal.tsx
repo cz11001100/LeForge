@@ -86,18 +86,25 @@ const RecordingModal: React.FC<RecordingModalProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="bg-sky-100 border-sky-200 text-slate-900 sm:max-w-[600px] p-8 max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <div className="flex justify-center items-center mb-4">
-            <div className="w-8 h-8 bg-red-500 rounded-full flex items-center justify-center">
-              <span className="text-slate-900 font-bold text-sm">REC</span>
+      <DialogContent className="flex w-[calc(100%-1.5rem)] max-h-[90vh] flex-col gap-0 overflow-hidden border-sky-200 bg-sky-100/85 p-0 text-slate-900 sm:max-w-[1200px]">
+        <DialogHeader className="shrink-0 border-b border-sky-200 px-6 py-4">
+          <div className="flex items-center gap-3 pr-8 text-left">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-red-500">
+              <span className="text-sm font-bold text-white">REC</span>
+            </div>
+            <div className="min-w-0">
+              <DialogTitle className="text-left text-xl font-bold">
+                {resume ? "继续录制 Continue Recording" : "配置录制 Configure Recording"}
+              </DialogTitle>
+              <DialogDescription className="text-left text-sm text-slate-600">
+                {resume
+                  ? "新 episode 将追加到现有数据集。"
+                  : "选择机器人并配置数据集参数。"}
+              </DialogDescription>
             </div>
           </div>
-          <DialogTitle className="text-slate-900 text-center text-2xl font-bold">
-            {resume ? "Continue Recording" : "Configure Recording"}
-          </DialogTitle>
         </DialogHeader>
-        <div className="space-y-6 py-4">
+        <div className="flex-1 space-y-5 overflow-y-auto px-6 py-5">
           {resume && (
             <div className="flex items-center gap-2 rounded-lg bg-blue-100 border border-blue-500/30 px-4 py-3">
               <RotateCw className="h-4 w-4 text-blue-700 shrink-0" />
@@ -111,16 +118,11 @@ const RecordingModal: React.FC<RecordingModalProps> = ({
               </p>
             </div>
           )}
-          <DialogDescription className="text-slate-600 text-base leading-relaxed text-center">
-            {resume
-              ? "New episodes will be added to the existing dataset."
-              : "Pick a configured robot and dataset parameters for recording."}
-          </DialogDescription>
-
-          <div className="grid grid-cols-1 gap-6">
+          <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
+            <div className="space-y-5">
             <div className="space-y-4">
               <h3 className="text-lg font-semibold text-slate-900 border-b border-sky-300 pb-2">
-                Robot Configuration
+                机器人配置 Robot Configuration
               </h3>
               {!robot ? (
                 <Alert className="bg-amber-100 border-amber-300 text-amber-700">
@@ -150,7 +152,7 @@ const RecordingModal: React.FC<RecordingModalProps> = ({
 
             <div className="space-y-4">
               <h3 className="text-lg font-semibold text-slate-900 border-b border-sky-300 pb-2">
-                Dataset Configuration
+                数据集配置 Dataset Configuration
               </h3>
               <div className="grid grid-cols-1 gap-4">
                 <div className="space-y-2">
@@ -263,6 +265,9 @@ const RecordingModal: React.FC<RecordingModalProps> = ({
               </div>
             </div>
 
+            </div>
+
+            <div className="space-y-5">
             <div className="space-y-3">
               <CameraConfiguration
                 cameras={cameras}
@@ -357,22 +362,25 @@ const RecordingModal: React.FC<RecordingModalProps> = ({
                 </div>
               </CollapsibleContent>
             </Collapsible>
+            </div>
           </div>
+        </div>
 
-          <div className="flex flex-col sm:flex-row gap-4 justify-center pt-4">
-            <Button
-              onClick={onStart}
-              disabled={!canStart}
-              className="w-full sm:w-auto bg-red-500 hover:bg-red-600 text-white px-10 py-6 text-lg transition-all shadow-md shadow-red-500/30 hover:shadow-lg hover:shadow-red-500/40 disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              Start Recording
-            </Button>
+        <div className="shrink-0 border-t border-sky-200 bg-sky-100 px-6 py-3">
+          <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
             <Button
               onClick={() => onOpenChange(false)}
               variant="outline"
-              className="w-full sm:w-auto border-sky-400 hover:border-sky-300 px-10 py-6 text-lg text-slate-500 bg-sky-100 hover:bg-sky-200"
+              className="border-sky-400 bg-sky-100 text-slate-600 hover:bg-sky-200 hover:text-slate-900"
             >
               Cancel
+            </Button>
+            <Button
+              onClick={onStart}
+              disabled={!canStart}
+              className="bg-red-500 px-6 text-white shadow-sm shadow-red-500/30 hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Start Recording
             </Button>
           </div>
         </div>

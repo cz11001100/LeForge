@@ -299,7 +299,51 @@ class SSHJobRunner:
         )
 
         if self._ssh_config.use_cn_mirror:
-            cmd_str = f"export HF_ENDPOINT=https://hf-mirror.com && {cmd_str}"
+            if config.trackio_enable and config.trackio_space_id:
+                # Trackio talks to the real Hub API (space_info, bucket commits);
+                # the read-only mirror answers those routes with HTML, so the
+                # training process itself must use the direct endpoint. Pre-fetch
+                # the dataset through the mirror first: the cache is keyed by
+                # repo+revision (not endpoint), so training reads it from disk
+                # while Trackio talks to huggingface.co.
+                q = self._shell_quote
+                rev_arg = (
+                    f", revision={config.dataset_revision!r}"
+                    if config.dataset_revision
+                    else ""
+                )
+                snippet = (
+                    "from huggingface_hub import snapshot_download as sd; "
+                    f"sd({config.dataset_repo_id!r}, repo_type='dataset'{rev_arg})"
+                )
+                # Skip the prefetch when the pinned snapshot is already complete
+                # (the common case on a reused pod), and bound it with a timeout:
+                # an unconditional snapshot_download against a slow mirror once
+                # hung for minutes and blocked training from ever starting.
+                if config.dataset_revision and len(config.dataset_revision) >= 7:
+                    slug = config.dataset_repo_id.replace("/", "--")
+                    marker = (
+                        f"$HOME/.cache/huggingface/hub/datasets--{slug}/snapshots/"
+                        f"{config.dataset_revision}"
+                    )
+                    prefetch = (
+                        f"if [ ! -d {q(marker)} ]; then "
+                        "HF_ENDPOINT=https://hf-mirror.com HF_HUB_DISABLE_XET=1 "
+                        f"timeout 600 {self._remote_python} -c {q(snippet)} "
+                        ">/dev/null 2>&1 || true; fi; "
+                    )
+                else:
+                    prefetch = (
+                        "HF_ENDPOINT=https://hf-mirror.com HF_HUB_DISABLE_XET=1 "
+                        f"timeout 600 {self._remote_python} -c {q(snippet)} "
+                        ">/dev/null 2>&1 || true; "
+                    )
+                cmd_str = f"{prefetch}{cmd_str}"
+                logger.info(
+                    "Trackio 已启用：数据集先用 hf-mirror 预拉取，训练进程直连 huggingface.co"
+                )
+            else:
+                cmd_str = f"export HF_ENDPOINT=https://hf-mirror.com && {cmd_str}"
 
         if self._ssh_config.remote_workdir:
             cmd_str = f"cd {self._ssh_config.remote_workdir} && {cmd_str}"

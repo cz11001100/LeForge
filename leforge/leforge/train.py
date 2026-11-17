@@ -84,16 +84,20 @@ def resolve_hub_revision(repo_id: str, repo_type: str = "dataset") -> str | None
         return None
 
 
-def _resolve_video_backend(requested: str | None) -> str:
+def _resolve_video_backend(requested: str | None, *, remote: bool = False) -> str:
     """Return the video backend to pass to LeRobot.
 
-    If the caller explicitly chose a backend, honour it.  Otherwise, probe
-    whether ``torchcodec`` can actually load at runtime (it may be installed
-    but broken on Windows when FFmpeg shared DLLs are missing) and fall back
-    to ``pyav`` when it can't.
+    If the caller explicitly chose a backend, honour it. Otherwise, for a
+    remote run the probe must NOT run here: it tests this machine's torchcodec,
+    while the decoder used is the remote host's (whose installer aligns
+    torchcodec with its torch). A broken local ABI would otherwise demote a
+    healthy pod to the much slower pyav. Locally, probe and fall back when the
+    installed torchcodec cannot load (e.g. Windows without FFmpeg DLLs).
     """
     if requested:
         return requested
+    if remote:
+        return "torchcodec"
     if importlib.util.find_spec("torchcodec"):
         try:
             importlib.import_module("torchcodec")
@@ -281,16 +285,21 @@ def augmentation_tfs(request) -> dict:
     preview shows exactly what training will apply.
     """
     tfs: dict = {}
+    # Photometric ranges widened past lerobot's defaults: at 0.8-1.2 / 0.5-1.5
+    # sharpness moved ~0.4/255 and saturation ~7/255, i.e. invisible in the
+    # preview and near-zero during training. Hue and affine stay conservative:
+    # hue would break the red/blue object semantics, affine aliases with the
+    # arm's own motion.
     if request.augmentation_brightness:
-        tfs["brightness"] = {"weight": 1.0, "type": "ColorJitter", "kwargs": {"brightness": [0.8, 1.2]}}
+        tfs["brightness"] = {"weight": 1.0, "type": "ColorJitter", "kwargs": {"brightness": [0.7, 1.3]}}
     if request.augmentation_contrast:
-        tfs["contrast"] = {"weight": 1.0, "type": "ColorJitter", "kwargs": {"contrast": [0.8, 1.2]}}
+        tfs["contrast"] = {"weight": 1.0, "type": "ColorJitter", "kwargs": {"contrast": [0.7, 1.3]}}
     if request.augmentation_saturation:
-        tfs["saturation"] = {"weight": 1.0, "type": "ColorJitter", "kwargs": {"saturation": [0.5, 1.5]}}
+        tfs["saturation"] = {"weight": 1.0, "type": "ColorJitter", "kwargs": {"saturation": [0.4, 1.6]}}
     if request.augmentation_hue:
         tfs["hue"] = {"weight": 1.0, "type": "ColorJitter", "kwargs": {"hue": [-0.05, 0.05]}}
     if request.augmentation_sharpness:
-        tfs["sharpness"] = {"weight": 1.0, "type": "SharpnessJitter", "kwargs": {"sharpness": [0.5, 1.5]}}
+        tfs["sharpness"] = {"weight": 1.0, "type": "SharpnessJitter", "kwargs": {"sharpness": [0.3, 1.8]}}
     if request.augmentation_affine:
         tfs["affine"] = {"weight": 1.0, "type": "RandomAffine", "kwargs": {"degrees": [-5.0, 5.0], "translate": [0.05, 0.05]}}
     return tfs
@@ -328,6 +337,7 @@ def build_training_command(
         # rest as unrecognized arguments, so the selection silently did nothing.
         cmd.append("--dataset.episodes=[" + ",".join(str(ep) for ep in request.dataset_episodes) + "]")
     # Data augmentation (image transforms)
+    is_remote = job_target is not None and job_target.runner in ("ssh", "hf_cloud")
     aug_enabled = request.augmentation_enable or request.dataset_image_transforms_enable
     if aug_enabled:
         cmd.extend(["--dataset.image_transforms.enable", "true"])
@@ -339,9 +349,16 @@ def build_training_command(
         if tfs:
             cmd.extend(["--dataset.image_transforms.tfs", json.dumps(tfs)])
 
+        # Remote GPUs must not spend worker CPU on augmentation: the batched GPU
+        # implementation covers every transform LeForge configures, leaving the
+        # workers to decode video only. A busy CPU dataloader was starving the
+        # 4090 (70% util). Local/6 GB cards keep the CPU path to save VRAM.
+        if is_remote:
+            cmd.extend(["--dataset.image_transforms.backend", "gpu"])
+
     # Video backend – auto-detect when not explicitly set (fixes torchcodec/FFmpeg
     # DLL loading failures on Windows where the package is installed but broken).
-    video_backend = _resolve_video_backend(request.dataset_video_backend)
+    video_backend = _resolve_video_backend(request.dataset_video_backend, remote=is_remote)
     cmd.extend(["--dataset.video_backend", video_backend])
 
     # Policy / reward-model routing. lerobot 0.6 trains the reward classifier
@@ -392,6 +409,18 @@ def build_training_command(
             cmd.extend(["--policy.push_to_hub", "true" if request.policy_push_to_hub else "false"])
             if request.policy_push_to_hub and request.policy_repo_id:
                 cmd.extend(["--policy.repo_id", request.policy_repo_id])
+
+    # Mixed precision is an accelerator setting, independent of --policy.*, and
+    # is still required when fine-tuning from a checkpoint (uses_checkpoint
+    # skips the whole policy block above). lerobot 0.7 drives autocast through
+    # accelerate's config, which is resolved independently of --policy.use_amp
+    # and the ACCELERATE_MIXED_PRECISION env: without this flag the resolved
+    # config said "no" (full fp32), ~40% slower per step and ~3 GB more VRAM.
+    if not is_reward_model:
+        if policy_weights_are_bf16(request.policy_type):
+            cmd.extend(["--accelerator.mixed_precision", "bf16"])
+        elif request.policy_use_amp:
+            cmd.extend(["--accelerator.mixed_precision", "fp16"])
 
     # GR00T-specific policy flags. These options only exist on the groot config,
     # so emit them only for --policy.type=groot; sending them to another policy

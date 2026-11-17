@@ -76,16 +76,28 @@ class TrackioLogger:
                 )
             self.cfg.run_name = f"{cfg.job_name}-{uuid.uuid4().hex[:8]}"
         resume = self.cfg.resume or ("allow" if cfg.resume and not generated else "never")
-        self._run = trackio.init(
-            project=self.cfg.project,
-            name=self.cfg.run_name,
-            group=self._group,
-            space_id=self.cfg.space_id,
-            private=self.cfg.private,
-            config=cfg.to_dict(),
-            resume=resume,
-            capture_console=self.cfg.capture_console,
-        )
+        self._disabled = False
+        try:
+            self._run = trackio.init(
+                project=self.cfg.project,
+                name=self.cfg.run_name,
+                group=self._group,
+                space_id=self.cfg.space_id,
+                private=self.cfg.private,
+                config=cfg.to_dict(),
+                resume=resume,
+                capture_console=self.cfg.capture_console,
+            )
+        except Exception as exc:  # noqa: BLE001
+            # Remote logging must never abort training. A Space that cannot be
+            # resolved (wrong id, read-only mirror endpoint answering with HTML,
+            # token without write access) degrades to local-only logging.
+            logging.warning(
+                "Trackio 初始化失败，本次训练不远程同步（训练继续）：%s", exc
+            )
+            self._run = None
+            self._disabled = True
+            return
 
         # `run.url` is the resolved Space id (`user/space`, also for a bare name or TRACKIO_SPACE_ID),
         # a self-hosted server URL, or None for the local database.
@@ -106,7 +118,7 @@ class TrackioLogger:
         The upload runs on the calling thread (a Space receives the file before this returns) and is
         best-effort: a failure is logged, never raised, so a flaky Space cannot kill a training run.
         """
-        if self.cfg.disable_artifact:
+        if self._disabled or self.cfg.disable_artifact:
             return
         try:
             self._upload_policy_artifact(checkpoint_dir)
@@ -154,6 +166,8 @@ class TrackioLogger:
         """
         if mode not in TRACKIO_MODES:
             raise ValueError(mode)
+        if self._disabled:
+            return
         if step is None and custom_step_key is None:
             raise ValueError("Either step or custom_step_key must be provided.")
         if custom_step_key is not None and custom_step_key not in d:
@@ -177,6 +191,8 @@ class TrackioLogger:
 
     def log_video(self, video_path: str, step: int, mode: str = "train") -> None:
         """Logs a video file under ``<mode>/video``."""
+        if self._disabled:
+            return
         if mode not in TRACKIO_MODES:
             raise ValueError(mode)
         video = trackio.Video(video_path, caption=f"{mode} step {step}")
@@ -184,4 +200,6 @@ class TrackioLogger:
 
     def finish(self) -> None:
         """Flushes pending logs and closes the run."""
+        if self._disabled:
+            return
         trackio.finish()

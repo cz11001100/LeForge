@@ -527,8 +527,8 @@ const Calibration = () => {
   const statusDisplay = getStatusDisplay();
 
   return (
-    <div className="min-h-screen bg-sky-100 text-slate-900 p-4">
-      <div className="max-w-4xl mx-auto">
+    <div className="leforge-page min-h-screen text-slate-900 p-4 lg:p-8">
+      <div className="max-w-[1200px] mx-auto">
         <div className="flex items-center gap-4 mb-6">
           <Button
             variant="ghost"
@@ -541,7 +541,7 @@ const Calibration = () => {
           <div className="flex items-center gap-3">
             <Logo iconOnly />
             <h1 className="text-3xl font-bold">
-              {robotName ? `Calibrate "${robotName}"` : "Device Calibration"}
+              {robotName ? `标定 Calibrate "${robotName}"` : "设备标定 Device Calibration"}
             </h1>
           </div>
         </div>
@@ -557,12 +557,12 @@ const Calibration = () => {
           </Alert>
         )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 items-start lg:grid-cols-2 gap-6">
           <Card className="bg-sky-50/70 border-sky-300 backdrop-blur-sm">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-slate-800">
                 <Settings className="w-5 h-5 text-blue-700" />
-                Configuration
+                配置 Configuration
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
@@ -683,7 +683,7 @@ const Calibration = () => {
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-slate-800">
                 <Activity className="w-5 h-5 text-teal-700" />
-                Status
+                状态 Status
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -908,7 +908,7 @@ const Calibration = () => {
             <CardHeader className="flex-row items-center justify-between space-y-0">
               <CardTitle className="flex items-center gap-2 text-slate-800">
                 <Settings className="w-5 h-5 text-blue-700" />
-                Attached cameras
+                已连接相机 Attached cameras
               </CardTitle>
               <div className="flex items-center gap-2">
                 <Label

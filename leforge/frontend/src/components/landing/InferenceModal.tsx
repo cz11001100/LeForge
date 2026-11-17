@@ -481,28 +481,28 @@ const InferenceModal: React.FC<Props> = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="bg-sky-100 border-sky-200 text-slate-900 sm:max-w-[600px] p-8 max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <div className="flex justify-center items-center mb-4">
-            <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center">
-              <Play className="w-4 h-4 text-slate-900" />
+      <DialogContent className="flex w-[calc(100%-1.5rem)] max-h-[90vh] flex-col gap-0 overflow-hidden border-sky-200 bg-sky-100/85 p-0 text-slate-900 sm:max-w-[1200px]">
+        <DialogHeader className="shrink-0 border-b border-sky-200 px-6 py-4">
+          <div className="flex items-center gap-3 pr-8 text-left">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-green-500">
+              <Play className="h-4 w-4 text-white" />
+            </div>
+            <div className="min-w-0">
+              <DialogTitle className="text-left text-xl font-bold">
+                配置推理 Configure Inference
+              </DialogTitle>
+              <DialogDescription className="text-left text-sm text-slate-600">
+                选择检查点与机器人，然后开始。
+              </DialogDescription>
             </div>
           </div>
-          <DialogTitle className="text-slate-900 text-center text-2xl font-bold">
-            Configure Inference
-          </DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-6 py-4">
-          <DialogDescription className="text-slate-600 text-base leading-relaxed text-center">
-            Pick a checkpoint and confirm hardware. The selected policy will
-            drive the follower autonomously for the configured duration.
-          </DialogDescription>
-
-          <div className="grid grid-cols-2 gap-4">
+        <div className="flex-1 space-y-5 overflow-y-auto px-6 py-5">
+          <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-4">
             <h3 className="text-lg font-semibold text-slate-900 border-b border-sky-300 pb-2">
-              Robot Configuration
+              机器人配置 Robot Configuration
             </h3>
             {!robot ? (
               <Alert className="bg-amber-100 border-amber-300 text-amber-700">
@@ -531,7 +531,7 @@ const InferenceModal: React.FC<Props> = ({
 
           <div className="space-y-4">
             <h3 className="text-lg font-semibold text-slate-900 border-b border-sky-300 pb-2">
-              Checkpoint
+              检查点 Checkpoint
             </h3>
             {checkpoints.length === 0 ? (
               <Alert className="bg-amber-100 border-amber-300 text-amber-700">
@@ -567,9 +567,11 @@ const InferenceModal: React.FC<Props> = ({
 
           </div>
 
+          <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
+            <div className="space-y-5">
           <div className="space-y-4">
             <h3 className="text-lg font-semibold text-slate-900 border-b border-sky-300 pb-2">
-              数据采集
+              数据采集 Data Collection
             </h3>
             {lastRealWorld && (
               <p className="text-xs text-slate-600">
@@ -670,9 +672,101 @@ const InferenceModal: React.FC<Props> = ({
             )}
           </div>
 
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold text-slate-900 border-b border-sky-300 pb-2">
+                相机 Cameras
+              </h3>
+              {policyConfigLoading ? (
+                <div className="flex items-center gap-2 text-sm text-slate-600">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Reading policy config…
+                </div>
+              ) : policyConfigError ? (
+                <Alert className="bg-red-100 border-red-300 text-red-700">
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertDescription>
+                    Couldn't load policy config: {policyConfigError}
+                  </AlertDescription>
+                </Alert>
+              ) : !policyConfig ? null : expectedCameraNames.length === 0 ? (
+                <p className="text-xs text-slate-600">
+                  This policy doesn't use cameras.
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  <p className="text-xs text-slate-600">
+                    为策略训练时的每个相机名选择来源（USB 摄像头或网络 RTSP/URL）。
+                  </p>
+                  {expectedCameraNames.map((name) => {
+                    const dims = policyConfig.image_features[name];
+                    const value = cameraBindings[name];
+                    const bound =
+                      typeof value === "number"
+                        ? availableCameras.find((c) => c.index === value)
+                        : undefined;
+                    return (
+                      <div key={name} className="flex items-center gap-3">
+                        <div className="flex-1">
+                          <Label className="text-sm font-medium text-slate-800">
+                            {name}
+                          </Label>
+                          <p className="text-xs text-slate-600">
+                            {dims.width}×{dims.height}
+                          </p>
+                        </div>
+                        <Select
+                          value={value != null ? String(value) : undefined}
+                          onValueChange={(v) => onCameraBindingChange(name, v)}
+                        >
+                          <SelectTrigger className="bg-sky-50 border-sky-300 text-slate-900 w-56">
+                            <SelectValue placeholder="Select a camera" />
+                          </SelectTrigger>
+                          <SelectContent className="bg-sky-100 border-sky-300 text-slate-900">
+                            {availableCameras.length === 0 &&
+                            networkCameras.length === 0 ? (
+                              <div className="px-2 py-1.5 text-xs text-slate-600">
+                                No cameras detected
+                              </div>
+                            ) : (
+                              <>
+                                {availableCameras.map((cam) => (
+                                  <SelectItem
+                                    key={cam.index}
+                                    value={String(cam.index)}
+                                  >
+                                    #{cam.index} — {cam.name}
+                                  </SelectItem>
+                                ))}
+                                {networkCameras.map((cam) => (
+                                  <SelectItem
+                                    key={cam.url}
+                                    value={`${URL_BINDING}${cam.url}`}
+                                  >
+                                    <div className="flex flex-col">
+                                      <span>{cam.name} · Network</span>
+                                      <span className="text-xs text-slate-600 break-all">
+                                        {cam.url}
+                                      </span>
+                                    </div>
+                                  </SelectItem>
+                                ))}
+                              </>
+                            )}
+                          </SelectContent>
+                        </Select>
+                        <CameraThumbnail deviceId={bound?.deviceId ?? ""} paused={submitting} />
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+
+            <div className="space-y-5">
           <div className="space-y-4">
             <h3 className="text-lg font-semibold text-slate-900 border-b border-sky-300 pb-2">
-              Run parameters
+              运行参数 Run parameters
             </h3>
             {policyConfig?.requires_task ? (
               <div className="space-y-2">
@@ -869,7 +963,7 @@ const InferenceModal: React.FC<Props> = ({
                       max={32}
                       value={bonN}
                       onChange={(v) => v !== undefined && setBonN(v)}
-                      className="bg-white border-sky-200 text-slate-900"
+                      className="bg-sky-50 border-sky-200 text-slate-900"
                     />
                   </div>
                   <div className="space-y-1">
@@ -879,7 +973,7 @@ const InferenceModal: React.FC<Props> = ({
                       max={100}
                       value={bonK}
                       onChange={(v) => v !== undefined && setBonK(v)}
-                      className="bg-white border-sky-200 text-slate-900"
+                      className="bg-sky-50 border-sky-200 text-slate-900"
                     />
                   </div>
                   <div className="space-y-1">
@@ -903,7 +997,7 @@ const InferenceModal: React.FC<Props> = ({
                       max={60}
                       value={bonConfirmK}
                       onChange={(v) => v !== undefined && setBonConfirmK(v)}
-                      className="bg-white border-sky-200 text-slate-900"
+                      className="bg-sky-50 border-sky-200 text-slate-900"
                     />
                   </div>
                 </div>
@@ -911,10 +1005,10 @@ const InferenceModal: React.FC<Props> = ({
                   <div className="space-y-1">
                     <Label className="text-xs text-slate-700">判成相机</Label>
                     <Select value={bonCamera} onValueChange={setBonCamera}>
-                      <SelectTrigger className="bg-white border-sky-200 text-slate-900">
+                      <SelectTrigger className="bg-sky-50 border-sky-200 text-slate-900">
                         <SelectValue />
                       </SelectTrigger>
-                      <SelectContent className="bg-white border-sky-200 text-slate-900">
+                      <SelectContent className="bg-sky-50 border-sky-200 text-slate-900">
                         {(expectedCameraNames.length > 0
                           ? expectedCameraNames
                           : ["up"]
@@ -931,7 +1025,7 @@ const InferenceModal: React.FC<Props> = ({
                     <Input
                       value={bonColors}
                       onChange={(e) => setBonColors(e.target.value)}
-                      className="bg-white border-sky-200 text-slate-900"
+                      className="bg-sky-50 border-sky-200 text-slate-900"
                     />
                   </div>
                 </div>
@@ -942,14 +1036,14 @@ const InferenceModal: React.FC<Props> = ({
                       value={bonAimRepo}
                       onChange={(e) => setBonAimRepo(e.target.value)}
                       placeholder="训练用的 demo 数据集，如 user/pick_red"
-                      className="bg-white border-sky-200 text-slate-900"
+                      className="bg-sky-50 border-sky-200 text-slate-900"
                     />
                     <Button
                       type="button"
                       variant="outline"
                       onClick={handleAimFit}
                       disabled={aimFitLoading || !bonAimRepo.trim()}
-                      className="shrink-0 bg-white border-sky-200 text-slate-700 hover:bg-sky-50"
+                      className="shrink-0 bg-sky-50 border-sky-200 text-slate-700 hover:bg-sky-50"
                     >
                       {aimFitLoading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                       拟合
@@ -976,115 +1070,32 @@ const InferenceModal: React.FC<Props> = ({
             )}
           </div>
 
-          <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-slate-900 border-b border-sky-300 pb-2">
-              Cameras
-            </h3>
-            {policyConfigLoading ? (
-              <div className="flex items-center gap-2 text-sm text-slate-600">
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Reading policy config…
-              </div>
-            ) : policyConfigError ? (
-              <Alert className="bg-red-100 border-red-300 text-red-700">
-                <AlertTriangle className="h-4 w-4" />
-                <AlertDescription>
-                  Couldn't load policy config: {policyConfigError}
-                </AlertDescription>
-              </Alert>
-            ) : !policyConfig ? null : expectedCameraNames.length === 0 ? (
-              <p className="text-xs text-slate-600">
-                This policy doesn't use cameras.
-              </p>
-            ) : (
-              <div className="space-y-3">
-                <p className="text-xs text-slate-600">
-                  为策略训练时的每个相机名选择来源（USB 摄像头或网络 RTSP/URL）。
-                </p>
-                {expectedCameraNames.map((name) => {
-                  const dims = policyConfig.image_features[name];
-                  const value = cameraBindings[name];
-                  const bound =
-                    typeof value === "number"
-                      ? availableCameras.find((c) => c.index === value)
-                      : undefined;
-                  return (
-                    <div key={name} className="flex items-center gap-3">
-                      <div className="flex-1">
-                        <Label className="text-sm font-medium text-slate-800">
-                          {name}
-                        </Label>
-                        <p className="text-xs text-slate-600">
-                          {dims.width}×{dims.height}
-                        </p>
-                      </div>
-                      <Select
-                        value={value != null ? String(value) : undefined}
-                        onValueChange={(v) => onCameraBindingChange(name, v)}
-                      >
-                        <SelectTrigger className="bg-sky-50 border-sky-300 text-slate-900 w-56">
-                          <SelectValue placeholder="Select a camera" />
-                        </SelectTrigger>
-                        <SelectContent className="bg-sky-100 border-sky-300 text-slate-900">
-                          {availableCameras.length === 0 &&
-                          networkCameras.length === 0 ? (
-                            <div className="px-2 py-1.5 text-xs text-slate-600">
-                              No cameras detected
-                            </div>
-                          ) : (
-                            <>
-                              {availableCameras.map((cam) => (
-                                <SelectItem
-                                  key={cam.index}
-                                  value={String(cam.index)}
-                                >
-                                  #{cam.index} — {cam.name}
-                                </SelectItem>
-                              ))}
-                              {networkCameras.map((cam) => (
-                                <SelectItem
-                                  key={cam.url}
-                                  value={`${URL_BINDING}${cam.url}`}
-                                >
-                                  <div className="flex flex-col">
-                                    <span>{cam.name} · Network</span>
-                                    <span className="text-xs text-slate-600 break-all">
-                                      {cam.url}
-                                    </span>
-                                  </div>
-                                </SelectItem>
-                              ))}
-                            </>
-                          )}
-                        </SelectContent>
-                      </Select>
-                      <CameraThumbnail deviceId={bound?.deviceId ?? ""} paused={submitting} />
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+          </div>
           </div>
 
-          <div className="flex flex-col sm:flex-row gap-4 justify-center pt-4">
+
+          </div>
+
+        <div className="shrink-0 border-t border-sky-200 bg-sky-100 px-6 py-3">
+          <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+            <Button
+              onClick={() => onOpenChange(false)}
+              variant="outline"
+              className="border-sky-400 bg-sky-100 text-slate-600 hover:bg-sky-200 hover:text-slate-900"
+            >
+              Cancel
+            </Button>
             <Button
               onClick={handleStart}
               disabled={!canStart}
-              className="w-full sm:w-auto bg-green-600 hover:bg-green-700 text-white px-10 py-6 text-lg disabled:opacity-40 disabled:cursor-not-allowed"
+              className="bg-green-600 px-6 text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              <Play className="w-5 h-5 mr-2" />
+              <Play className="h-4 w-4 mr-2" />
               {submitting
                 ? "Starting…"
                 : captureMode === "base"
                   ? "Start Inference"
                   : "Start Collecting"}
-            </Button>
-            <Button
-              onClick={() => onOpenChange(false)}
-              variant="outline"
-              className="w-full sm:w-auto border-sky-400 hover:border-sky-300 px-10 py-6 text-lg text-slate-500 bg-sky-100 hover:bg-sky-200"
-            >
-              Cancel
             </Button>
           </div>
         </div>

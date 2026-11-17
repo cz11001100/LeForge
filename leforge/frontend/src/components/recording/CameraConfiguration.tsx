@@ -377,7 +377,7 @@ const CameraConfiguration: React.FC<CameraConfigurationProps> = ({
   return (
     <div className="space-y-4">
       <h3 className="text-lg font-semibold text-slate-900 border-b border-sky-300 pb-2">
-        {readOnly ? "Cameras" : "Camera Configuration"}
+        {readOnly ? "相机 Cameras" : "相机配置 Camera Configuration"}
       </h3>
 
       {/* Add Camera Section — hidden in read-only mode (cameras are managed on

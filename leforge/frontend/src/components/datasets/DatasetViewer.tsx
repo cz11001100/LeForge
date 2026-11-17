@@ -128,7 +128,7 @@ const DatasetViewer: React.FC<Props> = ({ open, onOpenChange, repoId }) => {
       <DialogContent className="bg-sky-100 border-sky-200 text-slate-900 sm:max-w-[960px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-slate-900 text-center text-xl font-bold">
-            数据集可视化 · {repoId}
+            数据集可视化 Dataset Viewer · {repoId}
           </DialogTitle>
         </DialogHeader>
 

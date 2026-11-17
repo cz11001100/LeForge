@@ -86,7 +86,7 @@ const TrainingHealthCard: React.FC<TrainingHealthCardProps> = ({
             <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${statusConfig[health.status]?.bg} ${statusConfig[health.status]?.color}`}>
               <StatusIcon className="w-4 h-4" />
             </div>
-            <span>Training Health</span>
+            <span>训练健康度 Training Health</span>
           </div>
           <span className={`text-sm font-normal px-2 py-1 rounded ${statusConfig[health.status]?.bg} ${statusConfig[health.status]?.color}`}>
             {statusConfig[health.status]?.label}

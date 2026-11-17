@@ -37,6 +37,46 @@ def _to_b64_jpeg(frame) -> str:
     return base64.b64encode(buf.getvalue()).decode("ascii")
 
 
+def _open_dataset(repo_id: str):
+    """Open a local dataset; a Hub id (not cached) downloads via snapshot_download.
+
+    The raw hub 404 is noisy and does not say what to do — turn "repo not
+    found / private without access" into one actionable sentence.
+    """
+    from huggingface_hub.errors import RepositoryNotFoundError
+    from lerobot.datasets import LeRobotDataset
+
+    from .train import _resolve_video_backend
+
+    repo_id = repo_id.strip()
+    try:
+        return LeRobotDataset(repo_id, video_backend=_resolve_video_backend(None))
+    except RepositoryNotFoundError as exc:
+        raise ValueError(
+            f"Hub 上找不到数据集 {repo_id}：检查 ID 拼写，"
+            "或该私有仓库需要用当前 HF 账号授权"
+        ) from exc
+
+
+def _diff_stats(orig, aug) -> dict:
+    """Mean / max absolute change on the 0-255 scale — the honest strength number."""
+    d = (aug - orig).abs().mean(0) * 255.0
+    return {"mean": round(float(d.mean()), 1), "max": round(float(d.max()), 1)}
+
+
+def _diff_b64(orig, aug, gain: int = 8) -> str:
+    """Amplified difference map (amber on black) so subtle transforms are visible."""
+    from PIL import Image
+
+    d = ((aug - orig).abs().mean(0) * gain).clamp(0, 1).cpu().numpy()
+    h, w = d.shape
+    rgb = (d * 255.0).astype("uint8")[:, :, None] * [1.0, 0.67, 0.16]
+    img = Image.fromarray(rgb.clip(0, 255).astype("uint8"), mode="RGB")
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=88)
+    return base64.b64encode(buf.getvalue()).decode("ascii")
+
+
 def preview_augmentations(*, repo_id: str, request, n_frames: int = 3) -> dict:
     """Return original/augmented frame pairs from a local dataset.
 
@@ -44,14 +84,20 @@ def preview_augmentations(*, repo_id: str, request, n_frames: int = 3) -> dict:
     Frames are spread across the dataset so the preview is not one episode's
     first second.
     """
-    from lerobot.datasets import LeRobotDataset
     from lerobot.transforms import ImageTransformConfig, ImageTransforms, ImageTransformsConfig
 
-    from .train import _resolve_video_backend, augmentation_tfs
+    from .train import augmentation_tfs
 
     tfs = augmentation_tfs(request)
     if not tfs:
-        return {"camera": "", "original": [], "augmented": [], "transforms": [], "per_transform": []}
+        return {
+            "camera": "",
+            "original": [],
+            "augmented": [],
+            "pair_diffs": [],
+            "transforms": [],
+            "per_transform": [],
+        }
 
     cfg = ImageTransformsConfig(
         enable=True,
@@ -60,20 +106,23 @@ def preview_augmentations(*, repo_id: str, request, n_frames: int = 3) -> dict:
         tfs={name: ImageTransformConfig(**spec) for name, spec in tfs.items()},
     )
     tf = ImageTransforms(cfg)
-    dataset = LeRobotDataset(repo_id, video_backend=_resolve_video_backend(None))
+    dataset = _open_dataset(repo_id)
     camera = dataset.meta.camera_keys[0]
     n = len(dataset)
     count = max(1, min(n_frames, n))
     indices = sorted({round(i * (n - 1) / max(1, count - 1)) for i in range(count)})
 
-    original, augmented = [], []
+    original, augmented, pair_diffs = [], [], []
     for i in indices:
         frame = dataset[i][camera]
+        out = tf(frame)
         original.append(_to_b64_jpeg(frame))
-        augmented.append(_to_b64_jpeg(tf(frame)))
+        augmented.append(_to_b64_jpeg(out))
+        pair_diffs.append(_diff_stats(frame, out))
 
     # One example per transform at its strongest setting, on the same reference
-    # frame — a random combined draw can look subtle, this never does.
+    # frame — a random combined draw can look subtle, this never does. The diff
+    # map makes even near-invisible transforms (sharpness, hue) measurable.
     reference = dataset[indices[0]][camera]
     per_transform = []
     for name, spec in tfs.items():
@@ -89,12 +138,21 @@ def preview_augmentations(*, repo_id: str, request, n_frames: int = 3) -> dict:
                 },
             )
         )
-        per_transform.append({"name": name, "image": _to_b64_jpeg(single(reference))})
+        out = single(reference)
+        per_transform.append(
+            {
+                "name": name,
+                "image": _to_b64_jpeg(out),
+                "diff": _diff_stats(reference, out),
+                "diff_image": _diff_b64(reference, out),
+            }
+        )
 
     return {
         "camera": camera,
         "original": original,
         "augmented": augmented,
+        "pair_diffs": pair_diffs,
         "transforms": list(tfs.keys()),
         "per_transform": per_transform,
     }

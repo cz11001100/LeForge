@@ -91,7 +91,7 @@ const ImportModelModal: React.FC<Props> = ({ open, onOpenChange, onImported }) =
       <DialogContent className="bg-sky-100 border-sky-200 text-slate-900 sm:max-w-[520px] p-8">
         <DialogHeader>
           <DialogTitle className="text-slate-900 text-center text-2xl font-bold">
-            Import a model
+            导入模型 Import a model
           </DialogTitle>
           <DialogDescription className="text-slate-600 text-center">
             Point at a local directory or a Hugging Face repo. It appears as a

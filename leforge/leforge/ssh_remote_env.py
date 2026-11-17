@@ -157,10 +157,18 @@ def local_lerobot_version() -> str | None:
 
 
 def local_python_floor() -> tuple[int, int]:
-    """lerobot's own Requires-Python floor, so we don't hardcode a version."""
+    """lerobot's own Requires-Python floor, so we don't hardcode a version.
+
+    The spec is a range ("<3.13,>=3.12"): the first number in the string is the
+    UPPER bound, so it must be parsed from the ``>=`` clause — reading the first
+    match reported "needs >=3.13" for a perfectly valid 3.12 interpreter.
+    """
     with contextlib.suppress(Exception):
         spec = importlib.metadata.metadata("lerobot").get("Requires-Python") or ""
-        m = re.search(r"(\d+)\.(\d+)", spec)
+        m = re.search(r">=\s*(\d+)\.(\d+)", spec)
+        if m:
+            return (int(m.group(1)), int(m.group(2)))
+        m = re.fullmatch(r"\s*(\d+)\.(\d+)\s*", spec)
         if m:
             return (int(m.group(1)), int(m.group(2)))
     return (3, 12)
@@ -1533,7 +1541,15 @@ def install_lerobot_remote_streaming(
             yield step_result(5, "torchcodec", "done", tc_logs, tc_logs[-1] if tc_logs else "ok")
 
         # ── Step 6: Install training deps ───────────────────────────────────
-        deps = ["accelerate", "trackio", "tensorboard"]
+        deps = [
+            "accelerate",
+            "trackio",
+            "tensorboard",
+            # lerobot 0.7.x pins this range; a stale transformers (e.g. 5.5)
+            # lacks transformers.vision_utils and makes lerobot.policies
+            # unimportable, which kills training and the verification step.
+            "transformers>=5.22.0,<5.23.0",
+        ]
         yield step_result(6, "Installing training deps...", "running", [])
         deps_cmd = (
             f"{workdir_prefix}{python} -m pip install"
@@ -1561,36 +1577,51 @@ def install_lerobot_remote_streaming(
         # ── Step 7: Verify ──────────────────────────────────────────────────
         yield step_result(7, "Verifying installation...", "running", [])
         verify_script = (
-            "import torch, json, shutil\n"
+            "import json, shutil\n"
             "r = {}\n"
-            "r['torch'] = torch.__version__\n"
-            "r['cuda'] = torch.cuda.is_available()\n"
-            "r['cuda_ver'] = torch.version.cuda\n"
-            "r['gpu'] = torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'N/A'\n"
-            "r['ffmpeg'] = shutil.which('ffmpeg') is not None\n"
+            "try:\n"
+            "    import torch\n"
+            "    r['torch'] = torch.__version__\n"
+            "    r['cuda'] = torch.cuda.is_available()\n"
+            "    r['cuda_ver'] = torch.version.cuda\n"
+            "    r['gpu'] = torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'N/A'\n"
+            "except BaseException as e:\n"
+            "    r['fatal'] = type(e).__name__ + ': ' + str(e)\n"
+            "try:\n"
+            "    r['ffmpeg'] = shutil.which('ffmpeg') is not None\n"
+            "except BaseException:\n"
+            "    r['ffmpeg'] = False\n"
             "try:\n"
             "    import lerobot; r['lerobot'] = getattr(lerobot, '__version__', 'ok')\n"
-            "except: r['lerobot'] = 'MISSING'\n"
+            "except BaseException:\n"
+            "    r['lerobot'] = 'MISSING'\n"
             "try:\n"
             "    import datasets, accelerate, torchcodec.decoders; r['training_extras'] = True\n"
-            "except: r['training_extras'] = False\n"
+            "except BaseException:\n"
+            "    r['training_extras'] = False\n"
             "ready, missing = [], []\n"
-            "from lerobot.policies.factory import get_policy_class\n"
-            "for t in ('act','diffusion','pi0','pi0_fast','pi05','smolvla','groot','tdmpc','vqbet','cosmos3_nano','cosmos3_edge','dm05','eo1','evo1','fastwam','fineart_vla','flux3','g05','lawam','lingbot_va','lingbot_vla_v2','longwam','molmoact2','multi_task_dit','vla_jepa','wall_oss_05','wall_x','xvla'):\n"
-            "    try:\n"
-            "        get_policy_class(t); ready.append(t)\n"
-            "    except Exception:\n"
-            "        missing.append(t)\n"
+            "POLICIES = ('act','diffusion','pi0','pi0_fast','pi05','smolvla','groot','tdmpc','vqbet','cosmos3_nano','cosmos3_edge','dm05','eo1','evo1','fastwam','fineart_vla','flux3','g05','lawam','lingbot_va','lingbot_vla_v2','longwam','molmoact2','multi_task_dit','vla_jepa','wall_oss_05','wall_x','xvla')\n"
+            "try:\n"
+            "    from lerobot.policies.factory import get_policy_class\n"
+            "    for t in POLICIES:\n"
+            "        try:\n"
+            "            get_policy_class(t); ready.append(t)\n"
+            "        except BaseException:\n"
+            "            missing.append(t)\n"
+            "except BaseException as e:\n"
+            "    missing = list(POLICIES)\n"
+            "    r['factory_error'] = type(e).__name__ + ': ' + str(e)\n"
             "try:\n"
             "    from lerobot.rewards.factory import get_reward_model_class\n"
             "    get_reward_model_class('reward_classifier'); ready.append('reward_classifier')\n"
-            "except Exception:\n"
+            "except BaseException:\n"
             "    missing.append('reward_classifier')\n"
             "r['policies_ready'] = ready\n"
             "r['policies_missing'] = missing\n"
             "try:\n"
             "    import accelerate; r['accelerate'] = accelerate.__version__\n"
-            "except: r['accelerate'] = 'MISSING'\n"
+            "except BaseException:\n"
+            "    r['accelerate'] = 'MISSING'\n"
             "print(json.dumps(r))\n"
         )
         _stdin, stdout, stderr = client.exec_command(f"{python} -", timeout=180)
@@ -1602,6 +1633,14 @@ def install_lerobot_remote_streaming(
         if verr:
             verify_logs.extend(verr.splitlines())
 
+        if not vout:
+            tail = (verr or "远端 Python 没有输出").strip().splitlines()[-6:]
+            yield step_result(
+                7, "Verification", "failed", verify_logs,
+                "验证脚本没有输出：远端 Python 无法运行验证代码",
+                hint="；".join(tail)[:400] or "重新点「检查环境」确认 remote_python 可用",
+            )
+            return
         try:
             vdata = json.loads(vout.splitlines()[-1])
             missing = vdata.get("policies_missing", []) or []
@@ -1613,6 +1652,17 @@ def install_lerobot_remote_streaming(
 
             problems: list[str] = []
             notes: list[str] = []
+            if vdata.get("fatal"):
+                problems.append(f"基础依赖导入失败：{vdata['fatal']}")
+            if vdata.get("factory_error"):
+                fe = str(vdata["factory_error"])
+                tf_hint = (
+                    "（transformers 版本过旧，lerobot 0.7 需要 >=5.22,<5.23；"
+                    "重跑本安装会自动补装）"
+                    if "vision_utils" in fe
+                    else ""
+                )
+                problems.append(f"策略工厂无法导入：{fe}{tf_hint}")
             if not vdata.get("cuda"):
                 if not driver_ok:
                     notes.append(
@@ -1646,7 +1696,8 @@ def install_lerobot_remote_streaming(
                 f"PyTorch {vdata.get('torch')}, CUDA {vdata.get('cuda_ver')}, "
                 f"GPU {vdata.get('gpu')}, lerobot {remote_lr}（本地 {target_version or '?'}）, "
                 f"FFmpeg {'ok' if vdata.get('ffmpeg') else 'MISSING'}, "
-                f"policies ready: {len(vdata.get('policies_ready', []))}/9"
+                f"policies ready: {len(vdata.get('policies_ready', []))}"
+                f"/{len(vdata.get('policies_ready', [])) + len(missing)}"
             )
             if notes:
                 summary += f" — {notes[0]}"
@@ -1694,3 +1745,138 @@ def install_lerobot_remote(config_id: str, extra: str = "") -> dict:
                 "lines": update["logs"],
             }
     return {"success": False, "message": "Installation interrupted", "lines": []}
+
+
+LEFORGE_INSTALL_STEPS = 6
+
+
+def install_leforge_remote_streaming(config_id: str, use_cn_mirror: bool = False):
+    """Run install-ssh-env.sh on the remote and stream its step markers.
+
+    The environment comes from this repository's install.sh (patched lerobot +
+    leforge), not from a separately pip-installed PyPI lerobot. The script is
+    uploaded over SFTP so the pod needs no GitHub access for the bootstrap
+    itself; it still clones the repo internally for install.sh.
+    """
+    import socket
+    from pathlib import Path
+
+    from .ssh_config import get_ssh_config, set_remote_python
+
+    def step_result(step, label, status, logs, message="", hint=""):
+        return {
+            "step": step,
+            "total_steps": LEFORGE_INSTALL_STEPS,
+            "label": label,
+            "status": status,
+            "logs": logs[-20:],
+            "message": message,
+            "hint": hint,
+        }
+
+    cfg = get_ssh_config(config_id)
+    if cfg is None:
+        yield step_result(0, "Init", "failed", [], "Config not found")
+        return
+
+    script_path = Path(__file__).resolve().parents[2] / "install-ssh-env.sh"
+    if not script_path.is_file():
+        yield step_result(0, "Init", "failed", [], f"找不到安装脚本：{script_path}")
+        return
+
+    try:
+        client = _connect(cfg)
+    except Exception as exc:
+        yield step_result(0, "连接远端", "failed", [], _explain_connect_error(exc))
+        return
+
+    try:
+        sftp = client.open_sftp()
+        with sftp.open("/tmp/leforge-install-ssh-env.sh", "w") as fh:
+            fh.write(script_path.read_text())
+        sftp.close()
+
+        args = " --cn" if use_cn_mirror else ""
+        _stdin, stdout, _stderr = client.exec_command(
+            f"bash /tmp/leforge-install-ssh-env.sh --full{args} 2>&1", timeout=3600
+        )
+        channel = stdout.channel
+        channel.settimeout(30)
+
+        deadline = time.time() + 3600
+        logs: list[str] = []
+        current = 0
+        final_py: str | None = None
+        all_ok = False
+        buf = ""
+        while True:
+            if time.time() > deadline:
+                yield step_result(current or 0, "超时", "failed", logs[-10:], "安装超过 60 分钟，已放弃")
+                return
+            try:
+                chunk = channel.recv(4096)
+            except socket.timeout:
+                continue
+            if not chunk:
+                break
+            buf += chunk.decode(errors="replace")
+            while "\n" in buf:
+                line, buf = buf.split("\n", 1)
+                line = line.rstrip("\r")
+                if line.startswith("[STEP ") and "]" in line:
+                    try:
+                        k = int(line[6 : line.index("/")])
+                        label = line[line.index("]") + 1 :].strip()
+                        current = k
+                        yield step_result(k, label, "running", logs[-10:])
+                    except ValueError:
+                        logs.append(line)
+                elif line.startswith("[OK ") and "]" in line:
+                    try:
+                        k = int(line[4 : line.index("]")])
+                        msg = line[line.index("]") + 1 :].strip()
+                        yield step_result(k, msg or f"step {k}", "done", logs[-6:], msg)
+                    except ValueError:
+                        logs.append(line)
+                elif line.startswith("[FAIL ") and "]" in line:
+                    try:
+                        k = int(line[6 : line.index("]")])
+                        msg = line[line.index("]") + 1 :].strip()
+                        yield step_result(k, "失败", "failed", logs[-10:] + [line], msg)
+                    except ValueError:
+                        yield step_result(current or 0, "失败", "failed", logs[-10:] + [line], line)
+                    return
+                elif line.startswith("LEFORGE_PY="):
+                    final_py = line.split("=", 1)[1].strip()
+                elif line.strip() == "[ALL-OK]":
+                    all_ok = True
+                else:
+                    logs.append(line)
+                    if len(logs) > 300:
+                        logs = logs[-300:]
+
+        if final_py:
+            try:
+                set_remote_python(cfg.id, final_py)
+            except Exception:
+                pass
+        if all_ok:
+            yield step_result(
+                LEFORGE_INSTALL_STEPS,
+                "验证通过",
+                "done",
+                logs[-8:],
+                f"训练环境就绪（{final_py or 'venv'}）",
+            )
+        else:
+            yield step_result(
+                current or 0,
+                "安装中断",
+                "failed",
+                logs[-10:],
+                "安装脚本提前退出（看上面的日志）",
+            )
+    except Exception as exc:
+        yield step_result(0, "安装中断", "failed", [str(exc)[:500]], _explain_connect_error(exc))
+    finally:
+        client.close()

@@ -340,16 +340,16 @@ const Landing = () => {
 
   return (
     <div
-      className="min-h-screen bg-sky-50 text-slate-900 pb-16"
+      className="leforge-page min-h-screen text-slate-900 flex flex-col"
       style={{ ["--leforge-topbar-h" as string]: "48px" }}
     >
       <LandingTopBar />
 
       <div
-        className="sticky z-20 bg-sky-100/95 backdrop-blur supports-[backdrop-filter]:bg-sky-100/70 border-b border-sky-200"
+        className="lg:sticky z-20 bg-sky-100/65 backdrop-blur-xl supports-[backdrop-filter]:bg-sky-100/45 border-b border-sky-200/60"
         style={{ top: "var(--leforge-topbar-h)" }}
       >
-        <div className="mx-auto max-w-7xl px-4 py-4 grid gap-3 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+        <div className="forge-rise mx-auto max-w-[1680px] px-4 py-4 grid gap-3 grid-cols-1 md:grid-cols-2 lg:grid-cols-3 min-[1800px]:grid-cols-6">
           <RobotConfigManager
             selectedName={selectedName}
             selectedRecord={selectedRecord}
@@ -361,9 +361,11 @@ const Landing = () => {
             emaEnabled={emaEnabled}
             emaAlpha={emaAlpha}
           />
-          <div className="bg-sky-50 rounded-lg border border-sky-300 p-3 flex flex-col gap-2">
-            <h3 className="font-semibold text-lg text-left h-10 flex items-center gap-2">
-              <Database className="h-5 w-5 text-purple-700" />
+          <div className="forge-tile flex flex-col gap-2">
+            <h3 className="font-semibold text-lg tracking-tight text-left h-10 flex items-center gap-2 min-[1800px]:text-[15px]">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-purple-100">
+                <Database className="h-4 w-4 text-purple-700" />
+              </span>
               数据集 Dataset
             </h3>
             <DatasetPicker
@@ -382,22 +384,24 @@ const Landing = () => {
                   {datasetsLoading ? (
                     <>
                       <Loader2 className="h-4 w-4 animate-spin" />
-                      Loading datasets…
+                      正在加载数据集…
                     </>
                   ) : datasets.length === 0 ? (
-                    "No datasets — click to create…"
+                    "暂无数据集 — 点击新建…"
                   ) : (
-                    "Select or create dataset…"
+                    "选择或新建数据集…"
                   )}
                 </span>
                 <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
               </Button>
             </DatasetPicker>
           </div>
-          <div className="bg-sky-50 rounded-lg border border-sky-300 p-3 flex flex-col gap-2">
-            <h3 className="font-semibold text-lg text-left h-10 flex items-center gap-2">
-              <RotateCw className="h-5 w-5 text-blue-700" />
-              续录 Resuming
+          <div className="forge-tile flex flex-col gap-2">
+            <h3 className="font-semibold text-lg tracking-tight text-left h-10 flex items-center gap-2 min-[1800px]:text-[15px]">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-100">
+                <RotateCw className="h-4 w-4 text-blue-700" />
+              </span>
+              续录 Resume
             </h3>
             <ResumeDatasetPicker
               datasets={datasets}
@@ -408,27 +412,29 @@ const Landing = () => {
             >
               <Button
                 variant="outline"
-                className="w-full justify-between bg-sky-50 border-blue-600/50 text-slate-900 hover:bg-blue-100 hover:border-blue-500"
+                className="w-full justify-between bg-sky-50 border-sky-300 text-slate-900 hover:bg-sky-200"
               >
                 <span className="truncate text-blue-700 flex items-center gap-2">
                   {datasetsLoading ? (
                     <>
                       <Loader2 className="h-4 w-4 animate-spin" />
-                      Loading datasets…
+                      正在加载数据集…
                     </>
                   ) : datasets.filter((d) => d.source === "local" || d.source === "both").length === 0 ? (
-                    "No local datasets — record one first…"
+                    "暂无本地数据集 — 先录制一个…"
                   ) : (
-                    "Select dataset to resume…"
+                    "选择要续录的数据集…"
                   )}
                 </span>
                 <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
               </Button>
             </ResumeDatasetPicker>
           </div>
-          <div className="bg-sky-50 rounded-lg border border-sky-300 p-3 flex flex-col gap-2">
-            <h3 className="font-semibold text-lg text-left h-10 flex items-center gap-2">
-              <Brain className="h-5 w-5 text-green-700" />
+          <div className="forge-tile flex flex-col gap-2">
+            <h3 className="font-semibold text-lg tracking-tight text-left h-10 flex items-center gap-2 min-[1800px]:text-[15px]">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-green-100">
+                <Brain className="h-4 w-4 text-green-700" />
+              </span>
               模型 Model
             </h3>
             <Button
@@ -438,9 +444,11 @@ const Landing = () => {
               Training
             </Button>
           </div>
-          <div className="bg-sky-50 rounded-lg border border-sky-300 p-3 flex flex-col gap-2">
-            <h3 className="font-semibold text-lg text-left h-10 flex items-center gap-2">
-              <Rocket className="h-5 w-5 text-slate-600" />
+          <div className="forge-tile flex flex-col gap-2">
+            <h3 className="font-semibold text-lg tracking-tight text-left h-10 flex items-center gap-2 min-[1800px]:text-[15px]">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-cyan-100">
+                <Rocket className="h-4 w-4 text-cyan-700" />
+              </span>
               部署 Deploy
             </h3>
             <Popover
@@ -459,9 +467,9 @@ const Landing = () => {
                 >
                   <span className="truncate text-slate-700 flex items-center gap-2">
                     {importedModels.length === 0 ? (
-                      "No local models — import one first…"
+                      "暂无本地模型 — 先导入一个…"
                     ) : (
-                      "Select model…"
+                      "选择模型…"
                     )}
                   </span>
                   <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
@@ -497,9 +505,11 @@ const Landing = () => {
               </PopoverContent>
             </Popover>
           </div>
-          <div className="bg-sky-50 rounded-lg border border-sky-300 p-3 flex flex-col gap-2">
-            <h3 className="font-semibold text-lg text-left h-10 flex items-center gap-2">
-              <FlaskConical className="h-5 w-5 text-purple-700" />
+          <div className="forge-tile flex flex-col gap-2">
+            <h3 className="font-semibold text-lg tracking-tight text-left h-10 flex items-center gap-2 min-[1800px]:text-[15px]">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-purple-100">
+                <FlaskConical className="h-4 w-4 text-purple-700" />
+              </span>
               评估 Evaluation
             </h3>
             <Popover
@@ -514,10 +524,10 @@ const Landing = () => {
                   variant="outline"
                   role="combobox"
                   aria-expanded={evalPopoverOpen}
-                  className="w-full justify-between bg-sky-50 border-purple-600/50 text-slate-900 hover:bg-purple-100 hover:border-purple-500"
+                  className="w-full justify-between bg-sky-50 border-sky-300 text-slate-900 hover:bg-sky-200"
                 >
                   <span className="truncate text-purple-700 flex items-center gap-2">
-                    {importedModels.length === 0 ? "No local models — import one first…" : "Select model to evaluate…"}
+                    {importedModels.length === 0 ? "暂无本地模型 — 先导入一个…" : "选择要评估的模型…"}
                   </span>
                   <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                 </Button>
@@ -553,7 +563,7 @@ const Landing = () => {
         </div>
       </div>
 
-      <main className="mx-auto max-w-7xl px-4 py-6">
+      <main className="mx-auto w-full max-w-[1680px] flex-1 px-4 py-6">
         <JobsSection />
       </main>
 

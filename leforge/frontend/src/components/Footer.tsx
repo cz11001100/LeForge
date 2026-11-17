@@ -33,8 +33,8 @@ const links = [
 
 const Footer: React.FC = () => {
   return (
-    <footer className="fixed inset-x-0 bottom-0 z-30 border-t border-sky-200 bg-sky-100/95">
-      <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-3 px-4 py-4 text-sm text-slate-600 sm:flex-row">
+    <footer className="border-t border-sky-200/60 bg-sky-100/60 backdrop-blur-xl">
+      <div className="mx-auto flex max-w-[1680px] flex-col items-center justify-between gap-3 px-4 py-4 text-sm text-slate-600 sm:flex-row">
         <span>
           Powered by{" "}
           <a

@@ -274,11 +274,11 @@ const EvaluationCard: React.FC<{
       <CardHeader className="pb-3">
         <CardTitle className="text-slate-900 flex items-center gap-2 text-base">
           <FlaskConical className="h-5 w-5 text-purple-700" />
-          模型评测
+          模型评测 Model Evaluation
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
           {variants && variants.length > 0 ? (
             <Field label="Checkpoint">
               <CheckpointDropdown
@@ -797,7 +797,7 @@ const DimensionDetail: React.FC<{
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <div className="text-lg font-semibold text-slate-900">{DIMENSION_LABELS[dimension]}维度详情</div>
+          <div className="text-lg font-semibold text-slate-900">{DIMENSION_LABELS[dimension]} 维度详情 Dimension Details</div>
           <div className="text-xs text-slate-600 mt-1">{DIMENSION_DESCRIPTIONS[dimension]}</div>
         </div>
         <button

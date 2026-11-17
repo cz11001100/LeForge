@@ -162,6 +162,36 @@ def trackio_space_url(space_id: str | None) -> str | None:
     return f"https://{subdomain}.hf.space/"
 
 
+def _ensure_trackio_space(config: TrainingRequest) -> None:
+    """Create the Trackio Space before launch.
+
+    trackio.init resolves a missing Space through space_info() and dies with a
+    JSONDecodeError on remote pods (non-JSON 404 body), so the Space must exist
+    up front. Failures here only warn: the run reports its own problem.
+    """
+    if not (config.trackio_enable and config.trackio_space_id):
+        return
+    from .utils.hf_auth import shared_hf_api
+
+    space_id = config.trackio_space_id.strip()
+    if "/" not in space_id:
+        logger.warning("Trackio space_id %r is not 'owner/name'; skipping creation", space_id)
+        return
+    try:
+        # Static Spaces are free; Gradio/Docker Spaces on free cpu-basic now
+        # return 402 Payment Required (HF PRO gate). Trackio's dashboard works
+        # as a static build that reads the bucket from the browser.
+        shared_hf_api().create_repo(
+            space_id,
+            repo_type="space",
+            space_sdk="static",
+            private=False,
+            exist_ok=True,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Could not create Trackio Space %s: %s", space_id, exc)
+
+
 class JobCheckpoint(BaseModel):
     """One checkpoint produced by a training job.
 
@@ -1068,6 +1098,8 @@ class JobRegistry:
             raise ValueError("flavor is required when runner is hf_cloud")
         if target.runner == "ssh" and not target.ssh_config_id:
             raise ValueError("ssh_config_id is required when runner is ssh")
+
+        _ensure_trackio_space(config)
 
         # Local training with RA-BC: refuse to start when the progress file is
         # missing or misaligned (merged dataset not re-scored), so weighting

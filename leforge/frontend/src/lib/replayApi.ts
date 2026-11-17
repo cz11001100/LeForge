@@ -224,12 +224,25 @@ export interface AugmentPreviewConfig {
   augmentation_affine?: boolean;
 }
 
+export interface AugmentDiff {
+  mean: number;
+  max: number;
+}
+
 export interface AugmentPreviewResult {
   camera: string;
   original: string[];
   augmented: string[];
+  // Quantified per-image change and amplified diff maps; absent until the
+  // server runs the build that returns them.
+  pair_diffs?: AugmentDiff[];
   transforms: string[];
-  per_transform: { name: string; image: string }[];
+  per_transform: {
+    name: string;
+    image: string;
+    diff?: AugmentDiff;
+    diff_image?: string;
+  }[];
 }
 
 export async function getAugmentPreview(

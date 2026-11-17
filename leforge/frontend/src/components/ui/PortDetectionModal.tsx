@@ -152,7 +152,7 @@ const PortDetectionModal: React.FC<PortDetectionModalProps> = ({
             <Loader2 className="w-16 h-16 text-blue-500 mx-auto animate-spin" />
             <div className="space-y-2">
               <h3 className="text-lg font-semibold text-slate-900">
-                Unplug the {robotType} arm
+                拔下 {robotType} 机械臂 Unplug the arm
               </h3>
               <p className="text-slate-600">
                 Disconnect the {robotType} robot arm from USB. The port will be
@@ -177,7 +177,7 @@ const PortDetectionModal: React.FC<PortDetectionModalProps> = ({
             <CheckCircle className="w-16 h-16 text-green-500 mx-auto" />
             <div className="space-y-2">
               <h3 className="text-lg font-semibold text-slate-900">
-                Port Detected
+                检测到端口 Port Detected
               </h3>
               <p className="text-xl font-mono text-green-700 bg-sky-50 px-4 py-2 rounded inline-block">
                 {detectedPort}
@@ -192,7 +192,7 @@ const PortDetectionModal: React.FC<PortDetectionModalProps> = ({
             <AlertCircle className="w-16 h-16 text-red-500 mx-auto" />
             <div className="space-y-2">
               <h3 className="text-lg font-semibold text-slate-900">
-                Detection Failed
+                检测失败 Detection Failed
               </h3>
               <div className="bg-red-100 border border-red-300 rounded-lg p-3">
                 <p className="text-red-700 text-sm">{error}</p>
@@ -226,7 +226,7 @@ const PortDetectionModal: React.FC<PortDetectionModalProps> = ({
       <DialogContent className="bg-sky-100 border-sky-200 text-slate-900 sm:max-w-[500px] p-8">
         <DialogHeader>
           <DialogTitle className="text-slate-900 text-center text-xl font-bold">
-            Port Detection
+            端口检测 Port Detection
           </DialogTitle>
           <DialogDescription className="text-slate-600 text-center">
             Detect the USB port for your {robotType} arm

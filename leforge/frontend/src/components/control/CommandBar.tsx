@@ -49,7 +49,7 @@ const CommandBar: React.FC<CommandBarProps> = ({
           <Button
             onClick={() => setIsVoiceActive(!isVoiceActive)}
             className={`px-6 py-2 ${
-              isVoiceActive ? 'bg-sky-300 text-slate-900 hover:bg-sky-200' : 'bg-sky-50 text-slate-700 hover:bg-sky-200'
+              isVoiceActive ? 'bg-sky-300 text-[#081425] hover:bg-sky-200' : 'bg-sky-50 text-slate-700 hover:bg-sky-200'
             }`}
           >
             {isVoiceActive ? <Mic strokeWidth={1.5} /> : <MicOff strokeWidth={1.5} />}
@@ -59,7 +59,7 @@ const CommandBar: React.FC<CommandBarProps> = ({
           <Button
             onClick={() => setShowCamera(!showCamera)}
             className={`px-6 py-2 ${
-              showCamera ? 'bg-sky-300 text-slate-900 hover:bg-sky-200' : 'bg-sky-50 text-slate-700 hover:bg-sky-200'
+              showCamera ? 'bg-sky-300 text-[#081425] hover:bg-sky-200' : 'bg-sky-50 text-slate-700 hover:bg-sky-200'
             }`}
           >
             <Camera strokeWidth={1.5} />
