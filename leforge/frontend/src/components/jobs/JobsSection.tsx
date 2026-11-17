@@ -400,11 +400,13 @@ const JobsSection: React.FC = () => {
     try {
       const configs = await listSSHConfigs(baseUrl, fetchWithHeaders);
       let discovered = 0;
+      let scanned = 0;
       const failures: string[] = [];
       for (const cfg of configs) {
         try {
           const res = await discoverRemoteJobs(baseUrl, fetchWithHeaders, cfg.id);
           discovered += res.discovered;
+          scanned += res.scanned ?? 0;
         } catch (e) {
           failures.push(`${cfg.name}: ${e instanceof Error ? e.message : String(e)}`);
         }
@@ -412,8 +414,13 @@ const JobsSection: React.FC = () => {
       if (discovered > 0) {
         toast({ title: `发现 ${discovered} 个云端任务`, description: "已加入任务列表，可下载其 checkpoint" });
         refresh();
+      } else if (scanned > 0) {
+        toast({
+          title: "没有新任务",
+          description: `远端扫描到 ${scanned} 个训练运行，本机都已登记过`,
+        });
       } else {
-        toast({ title: "没有发现新的云端任务" });
+        toast({ title: "远端没有找到训练任务" });
       }
       if (failures.length > 0) {
         toast({ title: "部分连接扫描失败", description: failures.join("；"), variant: "destructive" });

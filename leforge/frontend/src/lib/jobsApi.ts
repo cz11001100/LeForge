@@ -482,8 +482,8 @@ export async function discoverRemoteJobs(
   baseUrl: string,
   fetcher: Fetcher,
   configId: string,
-): Promise<{ discovered: number; jobs: JobRecord[] }> {
-  return apiRequest<{ discovered: number; jobs: JobRecord[] }>(
+): Promise<{ discovered: number; scanned?: number; jobs: JobRecord[] }> {
+  return apiRequest<{ discovered: number; scanned?: number; jobs: JobRecord[] }>(
     baseUrl,
     fetcher,
     "/ssh-configs/discover-jobs",

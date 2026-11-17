@@ -1301,9 +1301,11 @@ class JobRegistry:
         self._notify_change()
         return record
 
-    def discover_remote_jobs(self, config_id: str) -> builtins.list[JobRecord]:
+    def discover_remote_jobs(self, config_id: str) -> dict:
         """Register training runs that live on an SSH target but not locally.
 
+        Returns {"jobs": newly_registered, "scanned": runs_seen_on_the_pod} — the
+        scanned count lets the UI say "already known" instead of "found nothing".
         The registry only knows jobs launched from this machine. A pod reused
         from another computer still holds the lerobot run tree, its
         train_config.json and /tmp exit-code files, which is enough to rebuild
@@ -1366,18 +1368,36 @@ print(json.dumps(out))
 
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        kwargs: dict = {
+            "hostname": cfg.host,
+            "port": cfg.port,
+            "username": cfg.username,
+            "timeout": 20,
+        }
+        if cfg.key_path:
+            kwargs["key_filename"] = os.path.expanduser(cfg.key_path)
+        elif cfg.password:
+            kwargs["password"] = cfg.password
+        # Pod SSH gateways (compshare and friends) routinely drop the banner
+        # handshake; the rest of the codebase retries and so must this scan.
+        last_exc: Exception | None = None
+        for attempt in range(4):
+            try:
+                client.connect(**kwargs)
+                break
+            except Exception as exc:  # noqa: BLE001
+                last_exc = exc
+                with contextlib.suppress(Exception):
+                    client.close()
+                client = paramiko.SSHClient()
+                client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+                logger.warning("discover: SSH attempt %d failed: %s", attempt + 1, exc)
+                time.sleep(3 * (attempt + 1))
+        else:
+            raise RuntimeError(
+                f"无法连接远端（{last_exc}）：pod 的 SSH 网关可能暂时不可用，稍后重试"
+            )
         try:
-            kwargs: dict = {
-                "hostname": cfg.host,
-                "port": cfg.port,
-                "username": cfg.username,
-                "timeout": 20,
-            }
-            if cfg.key_path:
-                kwargs["key_filename"] = os.path.expanduser(cfg.key_path)
-            elif cfg.password:
-                kwargs["password"] = cfg.password
-            client.connect(**kwargs)
             _stdin, stdout, stderr = client.exec_command(
                 f"{cfg.remote_python or 'python3'} - <<'PY'\n{probe}PY", timeout=60
             )
@@ -1389,6 +1409,8 @@ print(json.dumps(out))
             entries = json.loads(raw.splitlines()[-1])
         finally:
             client.close()
+
+        scanned = len(entries)
 
         with self._lock:
             known = set(self._records)
@@ -1435,7 +1457,7 @@ print(json.dumps(out))
             created.append(record)
         if created:
             self._notify_change()
-        return created
+        return {"jobs": created, "scanned": scanned}
 
     def local_checkpoint_dir(self, job_id: str, step: int | None) -> Path | None:
         """Local directory holding this job's checkpoint, or None.

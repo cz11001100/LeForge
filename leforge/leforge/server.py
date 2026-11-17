@@ -760,6 +760,22 @@ def datasets_list():
     return dataset_browser.list_all_datasets()
 
 
+class PullHubDatasetRequest(BaseModel):
+    repo_id: str
+
+
+@app.post("/datasets/pull-hub")
+def datasets_pull_hub(body: PullHubDatasetRequest):
+    """Download a LeRobot dataset from the Hub (e.g. someone else's) into the local cache."""
+    return dataset_browser.pull_hub_dataset(body.repo_id)
+
+
+@app.get("/datasets/pull-hub/progress")
+def datasets_pull_hub_progress():
+    """Status of an in-flight / completed Hub pull for the UI to poll."""
+    return dataset_browser.get_hub_pull_progress()
+
+
 @app.get("/dataset-io/formats")
 def dataset_io_formats():
     """External formats the converter can read/write, with hints for the UI."""
@@ -1947,12 +1963,17 @@ def ssh_discover_jobs(body: SSHRemoteEnvBody):
     (and un-downloadable) on this machine.
     """
     try:
-        jobs = job_registry.discover_remote_jobs(body.config_id)
+        result = job_registry.discover_remote_jobs(body.config_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except RuntimeError as exc:
+    except Exception as exc:  # noqa: BLE001 - SSH gateway errors carry no common type
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    return {"discovered": len(jobs), "jobs": [j.model_dump() for j in jobs]}
+    jobs = result["jobs"]
+    return {
+        "discovered": len(jobs),
+        "scanned": result.get("scanned", 0),
+        "jobs": [j.model_dump() for j in jobs],
+    }
 
 
 class SSHRewardModelBody(BaseModel):
