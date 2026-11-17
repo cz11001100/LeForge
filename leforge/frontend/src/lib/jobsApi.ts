@@ -191,6 +191,8 @@ export interface JobRecord {
   error_message: string | null;
   metrics: TrainingMetrics;
   runner: "local" | "hf_cloud" | "ssh" | "imported";
+  // SSH runner only: the saved connection the job was launched against.
+  ssh_config_id?: string | null;
   hf_job_id: string | null;
   hf_flavor: string | null;
   hf_repo_id: string | null;

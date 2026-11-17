@@ -1324,45 +1324,67 @@ class JobRegistry:
         probe = r"""
 import glob, json, os
 out, seen = [], set()
-for root in (os.path.expanduser('~/leforge_outputs'), '/root/leforge_outputs'):
-    for d in sorted(glob.glob(os.path.join(root, '*'))):
-        if not os.path.isdir(d) or os.path.basename(d) in seen:
-            continue
-        name = os.path.basename(d)
-        seen.add(name)
-        cfgs = sorted(glob.glob(os.path.join(d, 'checkpoints', '*', 'pretrained_model', 'train_config.json')))
-        if not cfgs:
-            root_cfg = os.path.join(d, 'pretrained_model', 'train_config.json')
-            cfgs = [root_cfg] if os.path.isfile(root_cfg) else []
-        info = {'job_id': name, 'dir': d, 'policy': None, 'dataset': None,
-                'steps': None, 'job_name': None, 'ckpts': 0, 'exit': None, 'running': False}
-        if cfgs:
+# Default roots, legacy LeLab names, and the literal-~ directories left behind
+# by old runs whose `~` was never expanded.
+roots = [
+    os.path.expanduser('~/leforge_outputs'),
+    os.path.expanduser('~/lelab_outputs'),
+    os.path.expanduser('~/~/leforge_outputs'),
+    os.path.expanduser('~/~/lelab_outputs'),
+    '/root/leforge_outputs',
+    '/root/lelab_outputs',
+]
+cands = []
+for root in roots:
+    cands.extend(sorted(glob.glob(os.path.join(root, '*'))))
+# A run started with a custom --output_dir lives anywhere: take it from the
+# live process so in-progress jobs are discoverable regardless of path.
+procs = {}
+for pid in os.listdir('/proc'):
+    if not pid.isdigit():
+        continue
+    try:
+        cmd = open('/proc/' + pid + '/cmdline', 'rb').read().replace(b'\0', b' ').decode('utf-8', 'replace')
+    except Exception:
+        continue
+    if 'lerobot_train' in cmd:
+        procs[pid] = cmd
+        if '--output_dir' in cmd:
+            parts = cmd.split()
             try:
-                t = json.load(open(cfgs[-1]))
-                info['policy'] = (t.get('policy') or {}).get('type')
-                info['dataset'] = (t.get('dataset') or {}).get('repo_id')
-                info['steps'] = t.get('steps')
-                info['job_name'] = t.get('job_name')
+                cands.append(parts[parts.index('--output_dir') + 1].strip("'\""))
             except Exception:
                 pass
-        info['ckpts'] = len(glob.glob(os.path.join(d, 'checkpoints', '*', 'pretrained_model', 'config.json')))
-        ef = '/tmp/leforge_exit_' + name + '.code'
-        if os.path.isfile(ef):
-            try:
-                info['exit'] = int(open(ef).read().strip())
-            except Exception:
-                pass
-        for pid in os.listdir('/proc'):
-            if not pid.isdigit():
-                continue
-            try:
-                cmd = open('/proc/' + pid + '/cmdline', 'rb').read().replace(b'\0', b' ').decode('utf-8', 'replace')
-            except Exception:
-                continue
-            if 'lerobot_train' in cmd and d in cmd:
-                info['running'] = True
-                break
-        out.append(info)
+for d in cands:
+    d = d.rstrip('/')
+    if not os.path.isdir(d) or os.path.basename(d) in seen:
+        continue
+    name = os.path.basename(d)
+    seen.add(name)
+    cfgs = sorted(glob.glob(os.path.join(d, 'checkpoints', '*', 'pretrained_model', 'train_config.json')))
+    if not cfgs:
+        root_cfg = os.path.join(d, 'pretrained_model', 'train_config.json')
+        cfgs = [root_cfg] if os.path.isfile(root_cfg) else []
+    info = {'job_id': name, 'dir': d, 'policy': None, 'dataset': None,
+            'steps': None, 'job_name': None, 'ckpts': 0, 'exit': None, 'running': False}
+    if cfgs:
+        try:
+            t = json.load(open(cfgs[-1]))
+            info['policy'] = (t.get('policy') or {}).get('type')
+            info['dataset'] = (t.get('dataset') or {}).get('repo_id')
+            info['steps'] = t.get('steps')
+            info['job_name'] = t.get('job_name')
+        except Exception:
+            pass
+    info['ckpts'] = len(glob.glob(os.path.join(d, 'checkpoints', '*', 'pretrained_model', 'config.json')))
+    ef = '/tmp/leforge_exit_' + name + '.code'
+    if os.path.isfile(ef):
+        try:
+            info['exit'] = int(open(ef).read().strip())
+        except Exception:
+            pass
+    info['running'] = any(d in cmd for cmd in procs.values())
+    out.append(info)
 print(json.dumps(out))
 """
 

@@ -394,11 +394,29 @@ const JobsSection: React.FC = () => {
   useJobsChangedSignal(refresh, applyProgress);
 
   // A pod can hold runs launched from another computer; those have no local
-  // job.json, so scan every saved SSH target and register what it finds.
+  // job.json, so scan the SSH target behind the most recent job. Scanning every
+  // saved connection drowns the result in dead pods' SSH errors.
   const handleScanRemote = async () => {
     setScanning(true);
     try {
-      const configs = await listSSHConfigs(baseUrl, fetchWithHeaders);
+      const recent = jobs
+        .filter((j) => j.ssh_config_id)
+        .sort((a, b) => (b.started_at ?? 0) - (a.started_at ?? 0))[0];
+      if (!recent?.ssh_config_id) {
+        toast({ title: "还没有使用过 SSH 连接", description: "先发起一次云端训练或检查环境" });
+        return;
+      }
+      const all = await listSSHConfigs(baseUrl, fetchWithHeaders);
+      const cfg = all.find((c) => c.id === recent.ssh_config_id);
+      if (!cfg) {
+        toast({
+          title: "最近连接已删除",
+          description: "最近一次训练使用的 SSH 连接已被删除，无法扫描",
+          variant: "destructive",
+        });
+        return;
+      }
+      const configs = [cfg];
       let discovered = 0;
       let scanned = 0;
       const failures: string[] = [];
@@ -696,7 +714,7 @@ const JobsSection: React.FC = () => {
             onClick={handleScanRemote}
             disabled={scanning}
             className="h-8 border-sky-300 bg-sky-50/70 text-slate-800 hover:text-slate-900"
-            title="扫描已保存的 SSH 目标，把别的电脑发起的训练任务登记到本机"
+            title="扫描最近一次使用过的 SSH 连接，把别的电脑发起的训练任务登记到本机"
           >
             {scanning ? (
               <RefreshCw className="w-3.5 h-3.5 mr-1.5 animate-spin" />
