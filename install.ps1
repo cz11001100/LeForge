@@ -175,7 +175,9 @@ if ($LocalRepo) {
     }
 
     $Pip = @("pip", "install", "--python", $VenvPy)
-    if ($Upgrade) { $Pip += "--upgrade" }  # 升级时把依赖也拉到版本区间内的最新
+    # 升级时只对两个 editable 包加 --upgrade：让它们的依赖在区间内更新。
+    # 不加到所有 pip 调用上，否则后面装运行依赖时会顺手把 numpy 顶到 lerobot 的上限之外。
+    $PipUp = $Pip + @("--upgrade")
 
     # ---------- torch ----------
     # 与 install.sh 同一套判断：有 NVIDIA 显卡就走 cu128（RTX 50 系只认 cu128），
@@ -206,16 +208,11 @@ if ($LocalRepo) {
     # 少一个 placo-dep：Windows 上没有可用的 placo 轮子（见文件头说明）。
     Say "安装本仓库的 lerobot（feetech 电机 / SmolVLA / 训练）..."
     Say "  这步要下不少大包，约 5-15 分钟，请耐心等"
-    & $Uv.Source @Pip -e "$Root\lerobot[core_scripts,feetech,smolvla,training]"
+    $LerobotPip = if ($Upgrade) { $PipUp } else { $Pip }
+    & $Uv.Source @LerobotPip -e "$Root\lerobot[core_scripts,feetech,smolvla,training]"
     if ($LASTEXITCODE -ne 0) {
         Fail "lerobot 安装失败（退出码 $LASTEXITCODE）。若是编译类报错，多半是缺 Visual C++ 运行库；网络问题就重跑。"
     }
-
-    # lerobot 自己钉的是 numpy>=2,<2.3（pyarrow 21+ 要求 numpy 2.x）。Linux 版 install.sh
-    # 里那句 numpy<2.0 是给老训练依赖留的，Windows 上照抄会让数据集导入直接炸。
-    Say "对齐 numpy（>=2.0,<2.3）..."
-    & $Uv.Source @Pip "numpy>=2.0,<2.3"
-    if ($LASTEXITCODE -ne 0) { Fail "numpy 安装失败（退出码 $LASTEXITCODE）。" }
 
     # ---------- leforge ----------
     # --no-deps 与 install.sh 同法：leforge 的 pyproject 把 lerobot 声明成 git 依赖，
@@ -227,8 +224,16 @@ if ($LocalRepo) {
     if ($LASTEXITCODE -ne 0) { Fail "LeForge 依赖安装失败（退出码 $LASTEXITCODE）。" }
 
     Say "安装 LeForge 本体（可编辑模式，改代码即时生效）..."
-    & $Uv.Source @Pip --no-deps -e "$Root\leforge"
+    $LeForgePip = if ($Upgrade) { $PipUp } else { $Pip }
+    & $Uv.Source @LeForgePip --no-deps -e "$Root\leforge"
     if ($LASTEXITCODE -ne 0) { Fail "LeForge 安装失败（退出码 $LASTEXITCODE）。" }
+
+    # lerobot 自己钉的是 numpy>=2,<2.3（pyarrow 21+ 要求 numpy 2.x）。放在最后对齐，
+    # 是因为上面任何一步都可能把 numpy 顶到 2.4+；Linux 版 install.sh 里那句 numpy<2.0
+    # 是给老训练依赖留的，Windows 上照抄会让数据集导入直接炸。
+    Say "对齐 numpy（>=2.0,<2.3）..."
+    & $Uv.Source @Pip "numpy>=2.0,<2.3"
+    if ($LASTEXITCODE -ne 0) { Fail "numpy 安装失败（退出码 $LASTEXITCODE）。" }
 
     # ---------- 视频解码后端 ----------
     # Windows 上 torchcodec 配不上：lerobot 钉 torch>=2.7,<2.8，而 win_amd64 轮子从
