@@ -17,8 +17,8 @@
 Runs in a subprocess because rendering needs its own process. The tabletop
 scene is vendored in this repo under ``sim/so101-tabletop-mujoco`` and is the
 default environment (no Hub download); a Hub repo id or local path overrides it.
-MuJoCo renders offscreen through EGL by default, so no X display is needed;
-set MUJOCO_GL=glfw to render on a display instead.
+MuJoCo renders offscreen through EGL on Linux (no X display needed) and through
+WGL on Windows; set MUJOCO_GL=glfw to render on a display instead.
 Scores rank checkpoints against each other; acceptance stays on the real robot.
 """
 
@@ -33,12 +33,15 @@ import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_ENV_HUB = "lerobot/so101-tabletop-mujoco"
+
+_IS_WINDOWS = os.name == "nt"
 
 # Values meaning "use the scene vendored in this repo" instead of a Hub download.
 BUILTIN_ALIASES = {"", "builtin", "local", "内置"}
@@ -108,13 +111,17 @@ def open_scene_in_viewer(value: str | None) -> dict:
     """Launch sim/view_sim.py (MuJoCo window) on a local scene of this repo."""
     resolved = Path(resolve_env_path(value))
     repo_root = Path(__file__).resolve().parents[2]
-    sim_root = (repo_root / "sim").resolve()
+    sim_roots = [(repo_root / "sim").resolve()]
+    builtin = builtin_scene_dir()
+    if builtin is not None:
+        # 打包安装（uv tool）时 site-packages 旁边没有 sim/，但 ~/LeForge/sim 仍带着场景。
+        sim_roots.append(builtin.parent.resolve())
     try:
         resolved = resolved.resolve()
-        inside = sim_root in resolved.parents
     except OSError:
-        inside = False
-    if not resolved.is_dir() or not inside or not (resolved / "env.py").is_file():
+        return {"launched": False, "error": f"无法解析场景目录：{resolved}"}
+    matched = next((root for root in sim_roots if root in resolved.parents), None)
+    if matched is None or not resolved.is_dir() or not (resolved / "env.py").is_file():
         raise ValueError("只能打开本机 sim/ 下的场景目录（Hub 仓库请先在列表里选本机场景）")
     xml = resolved / "so101_tabletop.xml"
     if not xml.is_file():
@@ -124,16 +131,22 @@ def open_scene_in_viewer(value: str | None) -> dict:
         xml = candidates[0]
     env = os.environ.copy()
     env["MUJOCO_GL"] = "glfw"
-    if "DISPLAY" not in env:
+    if not _IS_WINDOWS and "DISPLAY" not in env:
         raise ValueError("当前 LeForge 进程没有图形显示（DISPLAY 未设置），无法打开 MuJoCo 窗口")
-    log = open(Path("/tmp/leforge-viewer.log"), "ab")
+    viewer = next(
+        (p for p in (matched / "view_sim.py", repo_root / "sim" / "view_sim.py") if p.is_file()),
+        None,
+    )
+    if viewer is None:
+        raise ValueError(f"找不到查看器脚本 view_sim.py（在 {matched} 下）")
+    log = open(Path(tempfile.gettempdir()) / "leforge-viewer.log", "ab")
     subprocess.Popen(
-        [sys.executable, str(repo_root / "sim" / "view_sim.py"), "--scene", str(xml)],
+        [sys.executable, str(viewer), "--scene", str(xml)],
         stdout=log,
         stderr=subprocess.STDOUT,
         env=env,
         cwd=str(resolved),
-        start_new_session=True,
+        **_detached_kwargs(),
     )
     log.close()
     return {"launched": True, "scene": str(xml)}
@@ -346,7 +359,43 @@ def diagnose_recordings(run_dir: Path, checkpoint_path: str) -> dict:
 _PROGRESS_RE = re.compile(r"(\d+)/(\d+)\s*\[")
 
 
+def _detached_kwargs() -> dict:
+    """Popen kwargs that detach the child so it outlives this server process.
+
+    POSIX gets its own session (``setsid``); Windows has no sessions, so a new
+    process group is the closest equivalent — and ``start_new_session`` is
+    POSIX-only, hence the split rather than one shared kwarg.
+    """
+    if _IS_WINDOWS:
+        flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+        return {"creationflags": flags} if flags else {}
+    return {"start_new_session": True}
+
+
 def _kill_proc_tree(proc: subprocess.Popen, force: bool = False) -> None:
+    """Signal the eval's whole process tree (it is spawned as its own group).
+
+    Windows has neither process groups to signal nor SIGKILL: terminate every
+    descendant through psutil instead, escalating to kill() like ``force``.
+    """
+    if _IS_WINDOWS:
+        try:
+            import psutil
+
+            parent = psutil.Process(proc.pid)
+            victims = parent.children(recursive=True) + [parent]
+        except Exception:  # noqa: BLE001 — gone already, or access denied
+            victims = []
+        for victim in victims:
+            with contextlib.suppress(Exception):
+                if force:
+                    victim.kill()
+                else:
+                    victim.terminate()
+        with contextlib.suppress(Exception):
+            proc.wait(timeout=5)
+        return
+
     sig = signal.SIGKILL if force else signal.SIGTERM
     try:
         os.killpg(proc.pid, sig)
@@ -506,9 +555,11 @@ def run_sim_eval(
         cmd.append(f"--env.make_env_kwargs={json.dumps(env_kwargs)}")
 
     env = os.environ.copy()
-    # EGL renders offscreen without an X display; glfw is the opt-in fallback.
-    env.setdefault("MUJOCO_GL", "egl")
-    if env["MUJOCO_GL"] == "glfw":
+    # EGL renders offscreen without an X display on Linux; Windows has no EGL,
+    # but WGL renders offscreen through the regular OpenGL driver. glfw is the
+    # opt-in "show a window" fallback on both.
+    env.setdefault("MUJOCO_GL", "wgl" if _IS_WINDOWS else "egl")
+    if env["MUJOCO_GL"] == "glfw" and not _IS_WINDOWS:
         env.setdefault("DISPLAY", ":0")
     env["PYTHONUNBUFFERED"] = "1"
 
@@ -520,7 +571,7 @@ def run_sim_eval(
             stderr=subprocess.STDOUT,
             env=env,
             cwd=str(run_dir),
-            start_new_session=True,
+            **_detached_kwargs(),
         )
     (run_dir / "proc.pid").write_text(str(proc.pid))
 

@@ -20,9 +20,17 @@ rig stay pixel-identical.
 from __future__ import annotations
 
 import logging
+import platform
 import subprocess
 
 logger = logging.getLogger(__name__)
+
+# Every control below is a V4L2 ioctl exposed through the v4l2-ctl CLI, which
+# only exists on Linux. Windows cameras are driven through DirectShow and macOS
+# through AVFoundation; there is no portable equivalent for exposure/gain, so
+# these helpers become no-ops elsewhere instead of shelling out to a missing
+# binary on every connect.
+_IS_LINUX = platform.system() == "Linux"
 
 # V4L2 auto_exposure menu: 1 = Manual, 3 = Aperture Priority (driver picks the
 # exposure; exposure_time_absolute goes inactive). Indices 0/2 are rejected by
@@ -98,6 +106,8 @@ def _supports(device_path: str, ctrl_name: str) -> bool:
 
 
 def apply_camera_controls(device_path: str, label: str = "") -> None:
+    if not _IS_LINUX:
+        return
     name = f"{label} ({device_path})" if label else device_path
     manual = _manual_for(device_path)
     _set_ctrl(device_path, "white_balance_automatic=1")

@@ -22,7 +22,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-os.environ.setdefault("MUJOCO_GL", "egl")
+os.environ.setdefault("MUJOCO_GL", "wgl" if os.name == "nt" else "egl")
 os.environ.setdefault("HF_HUB_ETAG_TIMEOUT", "5")
 
 HERE = Path(__file__).resolve().parent

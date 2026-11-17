@@ -229,7 +229,9 @@ fatal: unable to access 'https://github.com/cz11001100/LeForge.git/': Failed to 
 
 **训练完成时报错 `WinError 1314 客户端没有所需的特权`（符号链接创建失败）**
 
-LeRobot 保存 checkpoint 后，会创建一个符号链接 `checkpoints/last -> 训练输出目录`。但 Windows 默认不允许普通用户创建符号链接，导致训练完成后报 `OSError: [WinError 1314]`。解决方案：
+LeRobot 保存 checkpoint 后，会创建符号链接 `checkpoints/last -> 训练输出目录`。Windows 默认不允许普通用户创建符号链接，报 `OSError: [WinError 1314]`。
+
+当前版本已自动兜底：符号链接创建失败时改写为**目录联接（junction）**，它不需要任何特权，resume / 上传 / 界面列 checkpoint 的读法完全一致；junction 也建不了时只告警，训练照常结束、权重照常保存。若仍想用真正的符号链接：
 
 1. **方案一：开启 Windows 开发者模式**（推荐，一劳永逸，所有需要符号链接的操作都能正常）：
    - 图形界面：`设置 → 隐私和安全性 → 开发者选项 → 开发者模式 → 开启`

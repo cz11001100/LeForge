@@ -26,6 +26,10 @@ dependencies = [
     # and Diffusion Policy Zarr. zarr 3 changed the write API; pin to 2.x.
     "h5py>=3.10",
     "zarr>=2.18,<3",
+    # placo (IK / keyboard end-effector teleop) ships cmeel binary wheels for
+    # Linux and macOS only. lerobot's placo-dep extra carries its own
+    # `sys_platform != 'win32'` markers, so asking for it is a no-op on Windows
+    # and keyboard_ee simply reports that it needs a leader arm.
     "lerobot[core_scripts,feetech,smolvla,training,placo-dep] @ git+https://github.com/cz11001100/LeForge.git@main#subdirectory=lerobot",
     # torchcodec 不声明 torch 依赖，宽区间解析到 0.17（需 torch≥2.11）会与
     # torch 2.7.1 ABI 不匹配；0.5 为开发机实测配对（win32/aarch64 轮子另见 lerobot）。

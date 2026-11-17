@@ -209,8 +209,9 @@ def decode_video_frames_pyav(
 
     # set the first and last requested timestamps
     # Note: previous timestamps are usually loaded, since we need to access the previous key frame
-    first_ts = min(timestamps)
-    last_ts = max(timestamps)
+    # float(): callers may pass a 0-dim tensor, which cannot be divided by av's Fraction time_base.
+    first_ts = float(min(timestamps))
+    last_ts = float(max(timestamps))
 
     loaded_frames: list[torch.Tensor] = []
     loaded_ts: list[float] = []
@@ -252,7 +253,8 @@ def decode_video_frames_pyav(
         )
 
     # float64: hour-scale timestamps quantize past tolerance_s in float32.
-    query_ts = torch.tensor(timestamps, dtype=torch.float64)
+    # as_tensor: timestamps may already be a tensor (common on the PyAV path).
+    query_ts = torch.as_tensor(timestamps, dtype=torch.float64)
     loaded_ts_t = torch.tensor(loaded_ts, dtype=torch.float64)
 
     # compute distances between each query timestamp and timestamps of all loaded frames
@@ -455,7 +457,7 @@ def decode_video_frames_torchcodec(
     closest_frames = frames_batch.data
 
     # float64: hour-scale timestamps quantize past tolerance_s in float32.
-    query_ts = torch.tensor(timestamps, dtype=torch.float64)
+    query_ts = torch.as_tensor(timestamps, dtype=torch.float64)
     loaded_ts = frames_batch.pts_seconds.to(torch.float64)
 
     if log_loaded_timestamps:

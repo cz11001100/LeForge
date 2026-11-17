@@ -20,13 +20,29 @@
 
 ### 新增
 
+- **Windows 原生支持**：主流程（工作台、标定、遥操、采集、回放、数据集、本地训练、评估、仿真评测、SSH / HF 云训练）在 Windows 10/11 上直接可用，无需 WSL2
+- **Windows 本地解压包安装**：`install.ps1` 检测到完整仓库时改为从本地代码装进 `lerobot-env\`（不需要 git），并新增 `leforge-run.ps1` 启动器与 `leforge.cmd` 入口；支持残缺虚拟环境自动重建、可选 `pyrealsense2`、显式屏蔽 torchcodec
+- **Windows 一键安装 / 一键升级命令**：README 给出可直接粘贴的 `irm ... install.ps1 | iex` 与 `irm ... upgrade.ps1 | iex`；安装会把代码落到 `%USERPROFILE%\LeForge`（缺 git/uv 自动装），升级用 `git pull` + `install.ps1 -Upgrade` 同步脚本、Python 依赖与前端产物
 - **从 Hub 拉取数据集**：界面里直接把 HuggingFace Hub 上的数据集拉到本地，带拉取进度（`/datasets/pull-hub` 与进度接口）
 
 ### 变更
 
+- **依赖按平台拆分**：Windows 不安装 `placo`（`cmeel` 无 Windows 轮子，源码编译必然失败），`lerobot` 的 `placo-dep` extra 带 `sys_platform != 'win32'` 标记，因此 `keyboard_ee` 键盘 IK 末端遥操在 Windows 不可用
+- **Windows 不装 torchcodec**：win_amd64 轮子要求 torch≥2.8，与本项目的 torch 2.7.x 不兼容（`WinError 127`），视频统一走 PyAV；`install.ps1` 会卸载残留版本
+- **安装自检覆盖视频解码**：新增 PyAV 编解码往返、内置仿真场景、摄像头枚举三项检查
+- **MuJoCo 渲染后端自适应**：Windows 默认 `MUJOCO_GL=wgl`，Linux 仍为 `egl`
 - **评测与仿真评测合并到一个弹窗**：移除独立的仿真评测弹窗，仿真评测并入评测弹窗统一进入
 - **弹窗标题统一**：抽出 `DialogHeading` 组件，导入模型 / HF 登录 / 端口检测 / 评测等弹窗统一标题与描述样式
 - **暗色主题次要文字提亮**：slate 500/600 提到 `#8fa1b6` / `#a3b3c6`，暗色下次要文字更清晰
+
+### 修复
+
+- **Windows 上检测任务存活会误杀进程**：`jobs._pid_alive` 用 `os.kill(pid, 0)` 探测，在 Windows 上等于 `TerminateProcess`，改为 psutil
+- **Windows 上仿真评测与本地训练的进程管理**：`os.killpg` / `signal.SIGKILL` 不存在、`start_new_session` 是 POSIX 专有、日志写死 `/tmp`、无 `DISPLAY` 检查，全部按平台分支；停止任务时改为结束整棵进程树
+- **Windows 未开开发者模式时训练中断**：保存 `checkpoints/last` 的符号链接报 `WinError 1314`，改为回退到目录联接（junction），都失败时只告警不中断训练
+- **非 Linux 平台反复刷 `v4l2-ctl` 报错**：`apply_camera_controls` 在非 Linux 直接短路
+- **PyAV 解码遇到 tensor 时间戳报错**：`decode_video_frames_pyav` 对 `min/max(timestamps)` 取 `float()`（0 维 tensor 无法与 `av` 的 Fraction time_base 相除），查询时间戳改用 `torch.as_tensor`
+- **仿真场景查看器找不到脚本**：`open_scene_in_viewer` 同时在本仓库与打包安装的 `sim/` 下查找 `view_sim.py`，路径解析失败时返回错误而不是抛异常
 
 ## [2026-11-17]
 

@@ -219,12 +219,67 @@ class MetricsHistoryPoint(BaseModel):
 
 
 def _pid_alive(pid: int) -> bool:
-    """Return True if a process with this PID exists. Cheap; uses signal 0."""
+    """Return True if a process with this PID exists.
+
+    POSIX probes with signal 0. Windows must not: there ``os.kill(pid, 0)`` is
+    *not* a probe — any signal other than CTRL_C/CTRL_BREAK goes straight to
+    TerminateProcess, so this check would kill the very job it is inspecting.
+    psutil reports existence without touching the process instead.
+    """
+    if os.name == "nt":
+        try:
+            import psutil
+
+            return psutil.pid_exists(pid)
+        except Exception:  # noqa: BLE001 — never let the watchdog crash on this
+            return False
     try:
         os.kill(pid, 0)
     except (ProcessLookupError, PermissionError):
         return False
     return True
+
+
+def _pid_is_sim_eval(pid: int) -> bool:
+    """True if ``pid`` is still the lerobot-eval subprocess (guards stale pid files).
+
+    Reads the command line through psutil so it works on every platform; the
+    old ``/proc/<pid>/cmdline`` read only exists on Linux.
+    """
+    try:
+        import psutil
+
+        cmdline = " ".join(psutil.Process(pid).cmdline())
+    except Exception:  # noqa: BLE001 — gone, access denied, or no psutil
+        return False
+    return "lerobot_eval" in cmdline
+
+
+def _kill_pid_tree(pid: int) -> None:
+    """Stop a detached subprocess and its children from a persisted PID.
+
+    POSIX signals the process group (the eval is spawned with setsid); Windows
+    has no SIGTERM/SIGKILL, so terminate the tree with psutil then kill what is
+    left.
+    """
+    if os.name == "nt":
+        try:
+            import psutil
+
+            parent = psutil.Process(pid)
+            victims = parent.children(recursive=True) + [parent]
+        except Exception:  # noqa: BLE001
+            return
+        for victim in victims:
+            with contextlib.suppress(Exception):
+                victim.terminate()
+        _gone, alive = psutil.wait_procs(victims, timeout=5)
+        for victim in alive:
+            with contextlib.suppress(Exception):
+                victim.kill()
+        return
+    with contextlib.suppress(ProcessLookupError, PermissionError):
+        os.killpg(pid, signal.SIGTERM)
 
 
 @runtime_checkable
@@ -364,6 +419,12 @@ class SubprocessJobRunner:
             return
         self._stop_event.set()
         try:
+            # On Windows terminate() only reaches the direct child; the training
+            # workers it spawned keep running and hold the GPU/serial port, so
+            # walk the tree there. POSIX keeps the plain signal path (the child
+            # leads its own session and handles SIGTERM itself).
+            if os.name == "nt":
+                _kill_pid_tree(self._process.pid)
             self._process.terminate()
             try:
                 self._process.wait(timeout=10)
@@ -2732,9 +2793,8 @@ print(json.dumps(out))
                     pid_file = _job_dir(self._output_root, record.id) / record.sim_eval_run_dir / "proc.pid"
                     with contextlib.suppress(OSError, ValueError):
                         pid = int(pid_file.read_text().strip())
-                        cmdline = Path(f"/proc/{pid}/cmdline").read_bytes()
-                        if b"lerobot_eval" in cmdline:
-                            os.killpg(pid, signal.SIGTERM)
+                        if _pid_is_sim_eval(pid):
+                            _kill_pid_tree(pid)
                 record.sim_eval_state = "failed"
                 if record.sim_eval_results is None:
                     record.sim_eval_results = {"error": "仿真评测被服务重启中断"}

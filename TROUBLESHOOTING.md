@@ -326,6 +326,74 @@ id -nG; ls /dev/ttyUSB* /dev/ttyACM* /dev/video* 2>&1
 
 ---
 
+## Windows 专属
+
+### `install.ps1` 跑不起来 / 提示禁止运行脚本
+
+PowerShell 默认策略会拦 `.ps1`。用带 `-ExecutionPolicy Bypass` 的调用方式，不要改全局策略：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install.ps1
+```
+
+如果脚本里的中文显示成乱码，说明文件被编辑器存成了无 BOM 的 UTF-8；仓库里的 `.ps1` 自带 BOM，重新从仓库取一份即可。
+
+### 提示装不了 `placo` / 编译 `cmeel-boost` 失败
+
+Windows 上**故意不装 placo**：它依赖 cmeel 预编译轮子，PyPI 没有 Windows 版本，退回源码编译必然失败。因此 `keyboard_ee`（没有主臂时用键盘做 IK 末端遥操）在 Windows 不可用，接 leader 主臂的遥操、采集、训练都不受影响。
+
+如果安装日志里仍在尝试编译 `cmeel-boost`，说明用的是旧版 `pyproject.toml`（依赖没按平台拆分），把仓库更新到最新再重装。
+
+### 训练到最后报 `WinError 1314`（拒绝符号链接）
+
+LeRobot 训练结束会建 `checkpoints/last` 软链，Windows 默认不允许普通用户建符号链接。当前版本已自动兜底：软链失败改写为**目录联接（junction）**，不需要任何权限，resume / 上传 / 界面列 checkpoint 的读法一致；junction 也建不了时只告警，训练照常结束、权重照常保存。
+
+想彻底消掉这条告警，可开启"开发者模式"（设置 → 系统 → 开发者选项），或以管理员身份运行。
+
+### 端口 8000 被占用 / 关掉窗口后端口还占着
+
+```powershell
+.\leforge-run.ps1 --stop
+```
+
+`--stop` 会按 cmdline、端口监听、遗留 reload worker 三种信号找出属于 LeForge 的进程并连同子进程结束掉，不会误杀其他开发服务。
+
+### 找不到串口 / 机械臂不响应
+
+- 装 CH340 / CP2102 驱动；设备管理器里确认端口号（常见 `COM3`），界面里手动选
+- 别用纯充电线，换主板直插的 USB 口
+- 串口被别的程序（串口助手、Arduino IDE）占用时，LeForge 打不开
+
+### 摄像头列表为空 / 打不开
+
+- LeForge 在 Windows 走 DirectShow；被 Zoom / Teams / OBS 占用时拿不到画面
+- Windows 默认允许桌面应用访问摄像头：设置 → 隐私 → 相机，确认已开启
+- 摄像头名字由 pygrabber 读取；若列表里只有编号没有名字，重跑 `install.ps1` 补装 pygrabber
+
+### 仿真评测报 MuJoCo 渲染失败
+
+Windows 没有 EGL，LeForge 默认改用 `MUJOCO_GL=wgl`。仍失败时：
+
+- 更新显卡驱动（WGL 依赖 OpenGL 3.1+）
+- 远程桌面会话可能拿不到 OpenGL 上下文，改本机登录再试
+- 兜底：`$env:MUJOCO_GL='glfw'` 再启动（走窗口渲染，需要桌面会话；Windows 不支持 `egl` / `osmesa`）
+
+### 视频解码报 `torchcodec` / `WinError 127`
+
+Windows 上**故意不装 torchcodec**：本项目的 torch 钉在 2.7.x，而 torchcodec 的 win_amd64 轮子从 0.7.0 起就要求 torch≥2.8，装上后 `import` 会因缺 `caffe2` 符号而失败（`WinError 127`）。`install.ps1` 会检测并卸载残留的 torchcodec，视频统一走 PyAV 软解。
+
+如果自己手动装过，卸载即可：
+
+```powershell
+uv pip uninstall --python .\lerobot-env\Scripts\python.exe torchcodec
+```
+
+### `leforge` 命令找不到
+
+本地解压包模式的环境在 `lerobot-env\`，启动器会挂到 `%USERPROFILE%\.local\bin\leforge.cmd`。新开 PowerShell 才会带上 PATH；或直接用 `.\leforge-run.ps1`。
+
+---
+
 ## torchcodec 找不到 FFmpeg 共享库
 
 **现象**：从 git 装好后报

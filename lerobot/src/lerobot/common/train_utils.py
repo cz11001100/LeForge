@@ -25,6 +25,8 @@ its writes live in the same method.
 
 import logging
 import os
+import subprocess
+from contextlib import suppress
 from importlib.resources import files
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -84,6 +86,8 @@ from lerobot.utils.hub import find_latest_hub_checkpoint
 from lerobot.utils.io_utils import load_json, write_json
 from lerobot.utils.random_utils import load_rng_state, save_rng_state
 
+logger = logging.getLogger(__name__)
+
 if TYPE_CHECKING:
     from accelerate import Accelerator
 
@@ -132,6 +136,37 @@ def should_save_checkpoint(step: int, save_freq: int, total_steps: int) -> bool:
     return (save_freq > 0 and step % save_freq == 0) or step == total_steps
 
 
+def _replace_with_windows_junction(link: Path, target: Path) -> bool:
+    """Best-effort stand-in for a symlink on Windows: a directory junction.
+
+    Creating a symlink on Windows needs Developer Mode or elevation and otherwise
+    fails with WinError 1314, which would kill a training run at its first save.
+    A junction needs no privilege and every reader of `last` (resume, Hub upload,
+    the web UI listing) treats it as a plain directory. Returns False if even the
+    junction could not be created, so the caller can keep training without it.
+    """
+    try:
+        result = subprocess.run(
+            ["cmd", "/c", "mklink", "/J", str(link), str(target)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return False
+    if result.returncode != 0:
+        logger.warning("Could not create junction %s -> %s: %s", link, target, result.stderr.strip())
+        return False
+    if not link.is_dir():
+        # 建出来了却走不通（跨卷、被重定向的文件系统等）：拆掉，宁可没有 `last`，
+        # 也不要留一个坏链让 resume / 上传误判。
+        with suppress(OSError):
+            os.rmdir(link)
+        logger.warning("Junction %s is not traversable; leaving `last` absent.", link)
+        return False
+    return True
+
+
 def update_last_checkpoint(checkpoint_dir: Path) -> None:
     """Point the `last` symlink in the checkpoints directory at the given checkpoint.
 
@@ -142,10 +177,20 @@ def update_last_checkpoint(checkpoint_dir: Path) -> None:
         checkpoint_dir (Path): The checkpoint step directory the `last` link should target.
     """
     last_checkpoint_dir = checkpoint_dir.parent / LAST_CHECKPOINT_LINK
-    if last_checkpoint_dir.is_symlink():
+    if os.path.isjunction(last_checkpoint_dir):
+        # A junction is not a symlink; only rmdir removes the reparse point.
+        os.rmdir(last_checkpoint_dir)
+    elif last_checkpoint_dir.is_symlink():
         last_checkpoint_dir.unlink()
     relative_target = checkpoint_dir.relative_to(checkpoint_dir.parent)
-    last_checkpoint_dir.symlink_to(relative_target)
+    try:
+        last_checkpoint_dir.symlink_to(relative_target)
+    except OSError as exc:
+        if os.name != "nt":
+            raise
+        logger.warning("Symlink for %s failed (%s); falling back to a junction.", last_checkpoint_dir, exc)
+        if not _replace_with_windows_junction(last_checkpoint_dir, checkpoint_dir):
+            logger.warning("Skipping the `last` checkpoint link; checkpoints themselves are saved.")
 
 
 # ---------------------------------------------------------------------------------------------

@@ -16,8 +16,8 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-# 必须在 import mujoco 之前设置：无显示器时用 EGL 渲染
-os.environ.setdefault("MUJOCO_GL", "egl")
+# 必须在 import mujoco 之前设置：无显示器时用 EGL 渲染（Windows 没有 EGL，用 WGL）
+os.environ.setdefault("MUJOCO_GL", "wgl" if os.name == "nt" else "egl")
 
 import imageio.v2 as imageio
 import numpy as np
