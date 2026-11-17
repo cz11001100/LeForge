@@ -51,6 +51,16 @@ powershell -ExecutionPolicy Bypass -NoProfile -Command "irm https://raw.githubus
 # 或新开一个 PowerShell 窗口后直接输入 leforge
 ```
 
+`raw.githubusercontent.com` 被网络阻断时，改用经由 `github.com` 的等价命令：
+
+```powershell
+# 安装
+git clone --depth 1 https://github.com/cz11001100/LeForge.git "$env:USERPROFILE\LeForge"; powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\LeForge\install.ps1"
+
+# 升级
+git -C "$env:USERPROFILE\LeForge" pull --ff-only; powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\LeForge\install.ps1" -Upgrade
+```
+
 已经有一份解压好的仓库？在仓库目录里跑 `.\install.ps1` 即可（不需要 git）；`.\install.ps1 -Upgrade` 与 `upgrade.ps1` 等价。
 
 与 Linux 的差异（取舍）：
