@@ -60,6 +60,22 @@ function Run-Python($PythonExe, $ScriptPath) {
 }
 
 # 在线模式要用 git 拉代码；干净机器上没装时用 winget 静默装一份。
+function Invoke-Git {
+    # PS 5.1 在 $ErrorActionPreference="Stop" 下会把原生命令写到 stderr 的内容
+    # （git clone 的 "Cloning into ..." 就是）当成终止错误，所以这里走 Start-Process
+    # 重定向，既不影响流程，也能把输出按普通文本打出来。
+    param([Parameter(Mandatory)][string[]]$GitArgs)
+    $quoted = $GitArgs | ForEach-Object { if ($_ -match '\s') { '"' + $_ + '"' } else { $_ } }
+    $out = [System.IO.Path]::GetTempFileName()
+    $err = [System.IO.Path]::GetTempFileName()
+    $p = Start-Process -FilePath "git" -ArgumentList $quoted -NoNewWindow -Wait -PassThru `
+        -RedirectStandardOutput $out -RedirectStandardError $err
+    Get-Content $out -ErrorAction SilentlyContinue | Where-Object { $_ -match '\S' } | ForEach-Object { Write-Host "  $_" }
+    Get-Content $err -ErrorAction SilentlyContinue | Where-Object { $_ -match '\S' } | ForEach-Object { Write-Host "  $_" }
+    Remove-Item $out, $err -ErrorAction SilentlyContinue
+    return $p.ExitCode
+}
+
 function Ensure-Git {
     $gitCmd = Join-Path $env:ProgramFiles "Git\cmd"
     if (Get-Command git -ErrorAction SilentlyContinue) { return }
@@ -122,8 +138,8 @@ if ($LocalRepo) {
     # 仅按现有代码重装依赖。
     if ($Upgrade -and (Test-Path (Join-Path $Root ".git"))) {
         Say "更新代码到 main 最新..."
-        & git -c http.version=HTTP/1.1 -c http.lowSpeedLimit=0 -C $Root pull --ff-only
-        if ($LASTEXITCODE -ne 0) {
+        $code = Invoke-Git @("-c", "http.version=HTTP/1.1", "-c", "http.lowSpeedLimit=0", "-C", $Root, "pull", "--ff-only")
+        if ($code -ne 0) {
             Warn "git pull 失败（本地有改动或网络不通），继续用当前代码安装"
         }
     }
@@ -451,8 +467,8 @@ exit $LASTEXITCODE
 
     if (Test-Path (Join-Path $RepoPath ".git")) {
         Say "复用已有代码：$RepoPath"
-        & git -c http.version=HTTP/1.1 -c http.lowSpeedLimit=0 -C $RepoPath pull --ff-only
-        if ($LASTEXITCODE -ne 0) { Warn "git pull 失败（本地有改动或网络不通），继续用现有代码安装" }
+        $code = Invoke-Git @("-c", "http.version=HTTP/1.1", "-c", "http.lowSpeedLimit=0", "-C", $RepoPath, "pull", "--ff-only")
+        if ($code -ne 0) { Warn "git pull 失败（本地有改动或网络不通），继续用现有代码安装" }
     } else {
         if (Test-Path $RepoPath) {
             $existing = @(Get-ChildItem -Force $RepoPath | Select-Object -ExpandProperty Name)
@@ -465,9 +481,9 @@ exit $LASTEXITCODE
         $cloned = $false
         for ($i = 1; $i -le 3; $i++) {
             # GitHub 在国内网络下常被重置连接：强制 HTTP/1.1 + 失败重试，避免装到一半断掉
-            & git -c http.version=HTTP/1.1 -c http.lowSpeedLimit=0 clone --depth 1 $GitRepo $RepoPath
-            if ($LASTEXITCODE -eq 0) { $cloned = $true; break }
-            Warn "  git clone 失败（退出码 $LASTEXITCODE），第 $i/3 次，稍后重试 ..."
+            $code = Invoke-Git @("-c", "http.version=HTTP/1.1", "-c", "http.lowSpeedLimit=0", "clone", "--depth", "1", $GitRepo, $RepoPath)
+            if ($code -eq 0) { $cloned = $true; break }
+            Warn "  git clone 失败（退出码 $code），第 $i/3 次，稍后重试 ..."
             if (Test-Path $RepoPath) { Remove-Item -Recurse -Force $RepoPath }
             Start-Sleep -Seconds 5
         }

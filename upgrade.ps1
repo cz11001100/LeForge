@@ -21,6 +21,21 @@ $ErrorActionPreference = "Stop"
 function Say($m)  { Write-Host "[INFO] $m" -ForegroundColor Green }
 function Fail($m) { Write-Host "[ERROR] $m" -ForegroundColor Red; exit 1 }
 
+function Invoke-GitPull([string]$Dir) {
+    # PS 5.1 在 $ErrorActionPreference="Stop" 下会把 git 写到 stderr 的内容当成终止错误，
+    # 所以走 Start-Process 重定向，再按普通文本打印。
+    $quoted = @("-c", "http.version=HTTP/1.1", "-c", "http.lowSpeedLimit=0", "-C", $Dir, "pull", "--ff-only") |
+        ForEach-Object { if ($_ -match '\s') { '"' + $_ + '"' } else { $_ } }
+    $out = [System.IO.Path]::GetTempFileName()
+    $err = [System.IO.Path]::GetTempFileName()
+    $p = Start-Process -FilePath "git" -ArgumentList $quoted -NoNewWindow -Wait -PassThru `
+        -RedirectStandardOutput $out -RedirectStandardError $err
+    Get-Content $out -ErrorAction SilentlyContinue | Where-Object { $_ -match '\S' } | ForEach-Object { Write-Host "  $_" }
+    Get-Content $err -ErrorAction SilentlyContinue | Where-Object { $_ -match '\S' } | ForEach-Object { Write-Host "  $_" }
+    Remove-Item $out, $err -ErrorAction SilentlyContinue
+    return $p.ExitCode
+}
+
 if (-not $RepoPath) { $RepoPath = Join-Path $env:USERPROFILE "LeForge" }
 $Installer = Join-Path $RepoPath "install.ps1"
 
@@ -32,9 +47,9 @@ if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
 }
 
 Say "更新代码：$RepoPath"
-& git -c http.version=HTTP/1.1 -c http.lowSpeedLimit=0 -C $RepoPath pull --ff-only
-if ($LASTEXITCODE -ne 0) {
-    Fail "git pull 失败（退出码 $LASTEXITCODE）。本地若有未提交改动，先提交或撤销；网络问题请重试。"
+$code = Invoke-GitPull $RepoPath
+if ($code -ne 0) {
+    Fail "git pull 失败（退出码 $code）。本地若有未提交改动，先提交或撤销；网络问题请重试。"
 }
 
 Say "重装依赖与前端产物 ..."
