@@ -312,10 +312,21 @@ class SSHJobRunner:
                     if config.dataset_revision
                     else ""
                 )
-                snippet = (
-                    "from huggingface_hub import snapshot_download as sd; "
-                    f"sd({config.dataset_repo_id!r}, repo_type='dataset'{rev_arg})"
-                )
+                # Mirror-prefetch the finetune base too when it is a Hub repo id
+                # (no leading slash/tilde): the pod then pulls it from cache
+                # instead of over the direct endpoint during the run.
+                pp = (config.policy_pretrained_path or "").strip()
+                if pp and "/" in pp and not pp.startswith(("/", "~")):
+                    snippet = (
+                        "from huggingface_hub import snapshot_download as sd; "
+                        f"sd({config.dataset_repo_id!r}, repo_type='dataset'{rev_arg}); "
+                        f"sd({pp!r}, repo_type='model')"
+                    )
+                else:
+                    snippet = (
+                        "from huggingface_hub import snapshot_download as sd; "
+                        f"sd({config.dataset_repo_id!r}, repo_type='dataset'{rev_arg})"
+                    )
                 # Skip the prefetch when the pinned snapshot is already complete
                 # (the common case on a reused pod), and bound it with a timeout:
                 # an unconditional snapshot_download against a slow mirror once

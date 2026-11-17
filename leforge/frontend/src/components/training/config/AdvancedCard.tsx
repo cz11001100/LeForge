@@ -168,10 +168,15 @@ const AdvancedCard: React.FC<ConfigComponentProps> = ({ config, updateConfig }) 
                 }}
               >
                 <SelectTrigger id="policy_pretrained_path" className="bg-sky-100 border-sky-300 text-slate-900 rounded-lg mt-1">
-                  <SelectValue placeholder={ckptLoading ? 'Loading checkpoints…' : 'Train from scratch (base policy)'} />
+                  <SelectValue placeholder={ckptLoading ? 'Loading checkpoints…' : '从头训练（不加载预训练权重）'} />
                 </SelectTrigger>
                 <SelectContent className="bg-sky-50 border-sky-300 text-slate-900">
-                  <SelectItem value="__none__">Train from scratch (base policy)</SelectItem>
+                  <SelectItem value="__none__">从头训练（不加载预训练权重）</SelectItem>
+                  {config.policy_type === 'smolvla' && (
+                    <SelectItem value="lerobot/smolvla_base">
+                      lerobot/smolvla_base（官方预训练，推荐）
+                    </SelectItem>
+                  )}
                   {ckptOptions.map((o) => (
                     <SelectItem key={o.value} value={o.value}>
                       {o.label}
