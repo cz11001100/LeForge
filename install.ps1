@@ -122,7 +122,7 @@ if ($LocalRepo) {
     # 仅按现有代码重装依赖。
     if ($Upgrade -and (Test-Path (Join-Path $Root ".git"))) {
         Say "更新代码到 main 最新..."
-        & git -C $Root pull --ff-only
+        & git -c http.version=HTTP/1.1 -c http.lowSpeedLimit=0 -C $Root pull --ff-only
         if ($LASTEXITCODE -ne 0) {
             Warn "git pull 失败（本地有改动或网络不通），继续用当前代码安装"
         }
@@ -451,7 +451,7 @@ exit $LASTEXITCODE
 
     if (Test-Path (Join-Path $RepoPath ".git")) {
         Say "复用已有代码：$RepoPath"
-        & git -C $RepoPath pull --ff-only
+        & git -c http.version=HTTP/1.1 -c http.lowSpeedLimit=0 -C $RepoPath pull --ff-only
         if ($LASTEXITCODE -ne 0) { Warn "git pull 失败（本地有改动或网络不通），继续用现有代码安装" }
     } else {
         if (Test-Path $RepoPath) {
@@ -462,8 +462,16 @@ exit $LASTEXITCODE
             Remove-Item $RepoPath -Force
         }
         Say "下载 LeForge 源码到 $RepoPath ..."
-        & git clone --depth 1 $GitRepo $RepoPath
-        if ($LASTEXITCODE -ne 0) { Fail "git clone 失败（退出码 $LASTEXITCODE）。检查网络 / 代理后重跑本命令。" }
+        $cloned = $false
+        for ($i = 1; $i -le 3; $i++) {
+            # GitHub 在国内网络下常被重置连接：强制 HTTP/1.1 + 失败重试，避免装到一半断掉
+            & git -c http.version=HTTP/1.1 -c http.lowSpeedLimit=0 clone --depth 1 $GitRepo $RepoPath
+            if ($LASTEXITCODE -eq 0) { $cloned = $true; break }
+            Warn "  git clone 失败（退出码 $LASTEXITCODE），第 $i/3 次，稍后重试 ..."
+            if (Test-Path $RepoPath) { Remove-Item -Recurse -Force $RepoPath }
+            Start-Sleep -Seconds 5
+        }
+        if (-not $cloned) { Fail "git clone 失败（3 次都没连上）。检查网络 / 代理后重跑本命令。" }
     }
 
     $Forward = @()

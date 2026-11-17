@@ -32,7 +32,7 @@ if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
 }
 
 Say "更新代码：$RepoPath"
-& git -C $RepoPath pull --ff-only
+& git -c http.version=HTTP/1.1 -c http.lowSpeedLimit=0 -C $RepoPath pull --ff-only
 if ($LASTEXITCODE -ne 0) {
     Fail "git pull 失败（退出码 $LASTEXITCODE）。本地若有未提交改动，先提交或撤销；网络问题请重试。"
 }
