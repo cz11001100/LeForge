@@ -84,6 +84,22 @@ echo "[OK 4] install.sh 完成"
 # ---------- 5. 自检 ----------
 echo "[STEP 5/6] 自检虚拟环境"
 [ -x "$PY" ] || fail 5 "没有找到 $PY"
+
+# torchcodec 按 torch 版本发布但元数据不钉 ABI：uv/pip 常装上不匹配的版本，
+# 导入时报 undefined symbol: torch_xxx。逐个版本回退对齐（与安装器 step 5b 同思路）。
+if ! "$PY" -c "from torchcodec.decoders import VideoDecoder" >/dev/null 2>&1; then
+    echo "[INFO] torchcodec 与 torch ABI 不匹配，自动对齐…"
+    TORCH_MINOR=$("$PY" -c 'import torch; print(torch.__version__.split(".")[1])' 2>/dev/null || echo 0)
+    ALIGN=()
+    if command -v uv >/dev/null 2>&1; then ALIGN=(uv pip install --python "$PY"); else ALIGN=("$PY" -m pip install); fi
+    for v in $(seq "$TORCH_MINOR" -1 3); do
+        "${ALIGN[@]}" -q --no-deps "torchcodec==0.$v" >/dev/null 2>&1 || true
+        if "$PY" -c "from torchcodec.decoders import VideoDecoder" >/dev/null 2>&1; then
+            echo "[INFO] torchcodec 已对齐到 0.$v"
+            break
+        fi
+    done
+fi
 SELF=$( ("$PY" - <<'PY' 2>&1 || true
 import json
 import torch, lerobot, transformers

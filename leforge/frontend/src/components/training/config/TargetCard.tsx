@@ -40,16 +40,6 @@ interface TargetCardProps extends ConfigComponentProps {
   sshConfigsLoading: boolean;
 }
 
-const formatHourly = (unitCostUsd: number, unitLabel: string): string => {
-  const hourly = unitLabel === "minute" ? unitCostUsd * 60 : unitCostUsd;
-  return `$${hourly.toFixed(2)}/hr`;
-};
-
-const formatFlavorLine = (f: RunnerFlavor): string => {
-  const accel = f.accelerator ? f.accelerator : f.cpu;
-  return `${f.pretty_name} · ${accel} · ${formatHourly(f.unit_cost_usd, f.unit_label)}`;
-};
-
 const emptySSHForm: SSHConfigInput = {
   name: "",
   host: "",
@@ -128,8 +118,6 @@ const INSTALLABLE_POLICIES: { v: string; label: string }[] = [
 const TargetCard: React.FC<TargetCardProps> = ({
   config,
   updateConfig,
-  authenticated,
-  flavors,
   loading,
   sshConfigs,
   sshConfigsLoading,
@@ -137,12 +125,7 @@ const TargetCard: React.FC<TargetCardProps> = ({
   const { baseUrl, fetchWithHeaders } = useApi();
   const { toast } = useToast();
   const target = config.target;
-  const value =
-    target.runner === "local"
-      ? "local"
-      : target.runner === "ssh"
-        ? "ssh"
-        : `hf:${target.flavor ?? ""}`;
+  const value = target.runner === "ssh" ? "ssh" : "local";
 
   const [showSSHForm, setShowSSHForm] = useState(false);
   const [sshForm, setSSHForm] = useState<SSHConfigInput>(emptySSHForm);
@@ -242,9 +225,6 @@ const TargetCard: React.FC<TargetCardProps> = ({
       updateConfig("target", { runner: "local" });
     } else if (v === "ssh") {
       updateConfig("target", { runner: "ssh" });
-    } else if (v.startsWith("hf:")) {
-      const flavor = v.slice("hf:".length);
-      updateConfig("target", { runner: "hf_cloud", flavor });
     }
   };
 
@@ -487,26 +467,12 @@ const TargetCard: React.FC<TargetCardProps> = ({
                 </span>
               </SelectItem>
               <SelectItem value="local">本地 — 本机（免费）</SelectItem>
-              {flavors.map((f) => (
-                <SelectItem
-                  key={f.name}
-                  value={`hf:${f.name}`}
-                  disabled={!authenticated}
-                >
-                  {formatFlavorLine(f)}
-                  {!authenticated && (
-                    <span className="text-amber-700 ml-2 text-xs">
-                      需登录 HF
-                    </span>
-                  )}
-                </SelectItem>
-              ))}
             </SelectContent>
           </Select>
           <p className="text-xs text-slate-600 mt-1">
             {target.runner === "ssh"
               ? "通过 SSH 在远程机器上训练；可远程检查/安装 lerobot。"
-              : "所示费用为每小时运行价；训练完成后策略会上传到你的 HF 账号。"}
+              : "在本机训练，免费。"}
           </p>
         </div>
 
@@ -756,7 +722,8 @@ const TargetCard: React.FC<TargetCardProps> = ({
                             <div className="text-slate-600 col-span-2">
                               策略:{" "}
                               <span className={remoteEnv.policies_missing?.length ? "text-amber-700" : "text-green-700"}>
-                                {(remoteEnv.policies_ready?.length ?? 0)}/9 可用
+                                {(remoteEnv.policies_ready?.length ?? 0)}/
+                                {((remoteEnv.policies_ready?.length ?? 0) + (remoteEnv.policies_missing?.length ?? 0))} 可用
                               </span>
                               {remoteEnv.policies_missing?.length ? (
                                 <span className="text-slate-600">，缺失: {remoteEnv.policies_missing.join(", ")}</span>

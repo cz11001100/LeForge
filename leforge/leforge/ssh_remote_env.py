@@ -157,10 +157,18 @@ def local_lerobot_version() -> str | None:
 
 
 def local_python_floor() -> tuple[int, int]:
-    """lerobot's own Requires-Python floor, so we don't hardcode a version."""
+    """lerobot's own Requires-Python floor, so we don't hardcode a version.
+
+    The spec is a range ("<3.13,>=3.12"): the first number in the string is the
+    UPPER bound, so it must be parsed from the ``>=`` clause — reading the first
+    match reported "needs >=3.13" for a perfectly valid 3.12 interpreter.
+    """
     with contextlib.suppress(Exception):
         spec = importlib.metadata.metadata("lerobot").get("Requires-Python") or ""
-        m = re.search(r"(\d+)\.(\d+)", spec)
+        m = re.search(r">=\s*(\d+)\.(\d+)", spec)
+        if m:
+            return (int(m.group(1)), int(m.group(2)))
+        m = re.fullmatch(r"\s*(\d+)\.(\d+)\s*", spec)
         if m:
             return (int(m.group(1)), int(m.group(2)))
     return (3, 12)
