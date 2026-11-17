@@ -426,6 +426,11 @@ _TAKEOVER_STATE_FILE = "takeover_state.json"
 # session; the subprocess returns home, rests and starts the next round in the
 # same process (no model reload).
 _ROUND_END_FILE = "round_end"
+# The subprocess publishes BoN state only when it was launched with BoN. Left
+# un-cleared, a previous run's file masquerades as live state (ghost panel and
+# disabled manual judging), and a leftover config hot-disables the next run.
+_BON_STATE_FILE = "bon_state.json"
+_BON_CONFIG_FILE = "bon_config.json"
 
 
 def _read_takeover_state() -> dict[str, Any]:
@@ -439,7 +444,7 @@ def _read_takeover_state() -> dict[str, Any]:
 
 def _read_bon_state() -> dict[str, Any]:
     try:
-        state = json.loads((_PREVIEW_DIR / "bon_state.json").read_text())
+        state = json.loads((_PREVIEW_DIR / _BON_STATE_FILE).read_text())
     except (OSError, ValueError):
         return {}
     return state if isinstance(state, dict) else {}
@@ -451,7 +456,7 @@ def handle_bon_config(cfg: dict[str, Any]) -> dict[str, Any]:
         return {"success": False, "status_code": 409, "message": "No inference is active"}
     try:
         _PREVIEW_DIR.mkdir(parents=True, exist_ok=True)
-        (_PREVIEW_DIR / "bon_config.json").write_text(json.dumps(cfg))
+        (_PREVIEW_DIR / _BON_CONFIG_FILE).write_text(json.dumps(cfg))
     except OSError as exc:
         return {"success": False, "status_code": 500, "message": f"Failed to write BoN config: {exc}"}
     return {"success": True, "message": "BoN config updated"}
@@ -1351,10 +1356,16 @@ def handle_start_inference(request: InferenceRequest) -> dict[str, Any]:
         log_handle = log_path.open("w", buffering=1)
 
         # Stale bridge files from a previous run would make the subprocess act
-        # on an old button press or report an old phase.
+        # on an old button press, report an old phase, or show ghost BoN state.
         with contextlib.suppress(OSError):
             _PREVIEW_DIR.mkdir(parents=True, exist_ok=True)
-            for stale in (_TAKEOVER_KEY_FILE, _TAKEOVER_STATE_FILE, _ROUND_END_FILE):
+            for stale in (
+                _TAKEOVER_KEY_FILE,
+                _TAKEOVER_STATE_FILE,
+                _ROUND_END_FILE,
+                _BON_STATE_FILE,
+                _BON_CONFIG_FILE,
+            ):
                 (_PREVIEW_DIR / stale).unlink(missing_ok=True)
 
         env = os.environ.copy()

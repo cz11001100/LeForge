@@ -53,6 +53,10 @@
 - **LeLab → LeForge 更名**：包名、命令、路径与安装地址全量重构（`lelab` → `leforge`、`lelab-run.sh` → `leforge-run.sh`、CLI 前缀 `--lelab.` → `--leforge.`），界面统一浅蓝主题；BoN 启动参数与运行面板同步适配新命名
 - **键盘末端遥操依赖**：一键安装的 lerobot extras 增加 `placo-dep`（IK 求解依赖），否则键盘末端遥操无法工作
 
+### 修复
+
+- **新装环境 torchcodec ABI 不匹配**：torchcodec 按 torch 版本发行但不声明 torch 依赖，新安装会解析到 0.17（需 torch≥2.11），与 torch 2.7.1 不匹配（`undefined symbol: torch_list_size`），视频解码退回 pyav。现钉到开发机实测的 0.5，安装时发现版本漂移自动自愈；自检与启动脚本一致注入 FFmpeg shim 路径，无系统 FFmpeg 时不再误报 torchcodec 不可用
+
 ## [2026-11-12]
 
 ### 新增

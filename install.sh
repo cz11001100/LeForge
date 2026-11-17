@@ -440,6 +440,17 @@ if [[ "$PROFILE" == full && "$(uname -s)" == Linux ]]; then
     esac
 fi
 
+# ---------- torchcodec 与 torch 2.7 的 ABI 配对 ----------
+FAILED_STEP="步骤4b torchcodec 版本配对"
+# torchcodec 按 torch 版本发行但不声明 torch 依赖，宽区间会解析到最新 0.17
+# （需 torch≥2.11），与 torch 2.7.1 ABI 不匹配（undefined symbol: torch_list_size）。
+# 开发机实测配对为 0.5，发现漂移就自愈。
+TC_VER=$("$VENV_PY" -c 'import importlib.metadata as m;print(m.version("torchcodec"))' 2>/dev/null || echo 未装)
+if [[ "$TC_VER" != 0.5 && "$TC_VER" != 0.5+* ]]; then
+    info "  torchcodec $TC_VER 与 torch 2.7.1 不配对，改装实测的 0.5..."
+    uv pip install --python "$VENV_PY" "torchcodec==0.5"
+fi
+
 # ---------- RealSense（可选）----------
 FAILED_STEP="步骤4 pyrealsense2（可选，允许失败）"
 if uv pip install --python "$VENV_PY" \
@@ -506,6 +517,11 @@ chmod +x "$ROOT/leforge-run.sh"
 
 # ---------- 自检 ----------
 FAILED_STEP="步骤6 安装自检"
+# 与启动脚本一致注入 FFmpeg shim：无系统 FFmpeg 时 torchcodec 在自检里也要能看到 soname
+SHIM="$("$VENV_PY" -c 'from leforge.utils.ffmpeg_shim import loader_path; print(loader_path())' 2>/dev/null)"
+if [[ -n "${SHIM:-}" && -d "$SHIM" ]]; then
+    export LD_LIBRARY_PATH="$SHIM${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+fi
 info "自检关键模块..."
 OK=true
 check() {  # check <说明> <python 表达式>
