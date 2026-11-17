@@ -27,6 +27,9 @@ dependencies = [
     "h5py>=3.10",
     "zarr>=2.18,<3",
     "lerobot[core_scripts,feetech,smolvla,training,placo-dep] @ git+https://github.com/cz11001100/LeForge.git@main#subdirectory=lerobot",
+    # torchcodec 不声明 torch 依赖，宽区间解析到 0.17（需 torch≥2.11）会与
+    # torch 2.7.1 ABI 不匹配；0.5 为开发机实测配对（win32/aarch64 轮子另见 lerobot）。
+    "torchcodec==0.5; (sys_platform == 'linux' and (platform_machine == 'x86_64' or platform_machine == 'AMD64')) or (sys_platform == 'darwin' and platform_machine == 'arm64')",
     # Windows-only: real DirectShow camera names for /available-cameras so the
     # frontend can match a camera to its browser deviceId (issues #12, #16).
     # Guarded by try/except at the call site, so its absence degrades gracefully.
