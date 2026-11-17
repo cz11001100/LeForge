@@ -532,7 +532,7 @@ const RolloutScoreCard: React.FC<{ initialRepoId?: string }> = ({
     <div className="rounded-lg border border-sky-300 bg-sky-50/60 p-4 space-y-4">
       <div className="flex items-center gap-2">
         <BarChart3 className="w-5 h-5 text-blue-700" />
-        <h2 className="text-xl font-semibold text-slate-900">数据集打分 Dataset Scoring（进度 · 成功率 · 接管率）</h2>
+        <h2 className="text-xl font-semibold text-slate-900">RA-BC（进度 · 成功率 · 接管率）</h2>
         <Button
           variant="ghost"
           size="icon"

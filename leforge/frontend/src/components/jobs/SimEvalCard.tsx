@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NumberInput } from "@/components/ui/number-input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Box, Loader2, Play, Square } from "lucide-react";
 import { useApi } from "@/contexts/ApiContext";
 import { useToast } from "@/hooks/use-toast";
@@ -39,6 +40,8 @@ const SIM_EVAL_CONFIG_KEY = "leforge.simeval.config";
 // resolved by the backend; no Hub download needed.
 const DEFAULT_ENV_HUB = "";
 const LEGACY_ENV_HUB = "lerobot/so101-tabletop-mujoco";
+const SMOOTH_DEFAULT = 0.5;
+const ENSEMBLE_DEFAULT = "0.01";
 
 interface SimEvalConfig {
   nEpisodes: number;
@@ -254,6 +257,7 @@ const SimEvalCard: React.FC<{
   const [envHub, setEnvHub] = useState(saved.envHub);
   const [smooth, setSmooth] = useState(saved.smooth);
   const [ensemble, setEnsemble] = useState(saved.ensemble);
+  const smoothAmount = Number(smooth) || 0;
   const [envOptions, setEnvOptions] = useState<SimEnvOption[]>([]);
   const [showCustomEnv, setShowCustomEnv] = useState(false);
   const [ensembleSupported, setEnsembleSupported] = useState<boolean | null>(null);
@@ -457,15 +461,15 @@ const SimEvalCard: React.FC<{
       : null;
 
   return (
-    <Card className="bg-sky-50/70 border-sky-300 rounded-xl">
+    <Card className="flex h-full flex-col bg-sky-50/70 border-sky-300 rounded-xl">
       <CardHeader className="pb-3">
         <CardTitle className="text-slate-900 flex items-center gap-2 text-base">
           <Box className="h-5 w-5 text-cyan-700" />
           仿真评测 Simulation Evaluation
         </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <CardContent className="flex flex-1 flex-col gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 items-start">
           {variants && variants.length > 0 ? (
             <Field label="Checkpoint">
               <CheckpointDropdown
@@ -540,14 +544,38 @@ const SimEvalCard: React.FC<{
                 className="bg-sky-100 border-sky-300 text-slate-900 rounded-lg mt-1 font-mono text-xs"
               />
             )}
-            <div className="text-[11px] text-slate-600 mt-1">
-              默认内置场景；可选本机 sim/ 下的其它场景，或任意 Hub 仓库
+          </Field>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 items-end">
+          <div className="flex items-center space-x-3">
+            <Switch
+              id="sim_action_smooth"
+              checked={smoothAmount > 0}
+              onCheckedChange={(v) => setSmooth(v ? String(SMOOTH_DEFAULT) : "0")}
+            />
+            <Label htmlFor="sim_action_smooth" className="text-slate-700 text-sm">
+              动作平滑
+            </Label>
+          </div>
+          {ensembleSupported !== false && (
+            <div className="flex items-center space-x-3">
+              <Switch
+                id="sim_temporal_ensemble"
+                checked={ensemble.trim() !== ""}
+                onCheckedChange={(v) => setEnsemble(v ? ENSEMBLE_DEFAULT : "")}
+              />
+              <Label htmlFor="sim_temporal_ensemble" className="text-slate-700 text-sm">
+                时序集成
+              </Label>
             </div>
-            <div className="flex flex-wrap items-center gap-2 mt-2">
+          )}
+          <div className="col-span-2 space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Button
                 type="button"
                 onClick={() => setShowNewEnv((v) => !v)}
-                className="h-7 px-2 text-xs bg-sky-200 hover:bg-sky-200 text-slate-900"
+                className="h-8 px-3 text-xs bg-sky-200 hover:bg-sky-200 text-slate-900"
               >
                 新建本地场景
               </Button>
@@ -555,13 +583,13 @@ const SimEvalCard: React.FC<{
                 type="button"
                 onClick={handleOpenViewer}
                 disabled={!canOpenViewer || openingViewer}
-                className="h-7 px-2 text-xs bg-sky-200 hover:bg-sky-200 text-slate-900 disabled:opacity-40"
+                className="h-8 px-3 text-xs bg-sky-200 hover:bg-sky-200 text-slate-900 disabled:opacity-40"
               >
                 {openingViewer ? "启动中…" : "在 MuJoCo 打开"}
               </Button>
             </div>
             {showNewEnv && (
-              <div className="flex items-center gap-2 mt-2">
+              <div className="flex items-center gap-2">
                 <Input
                   value={newEnvName}
                   onChange={(e) => setNewEnvName(e.target.value)}
@@ -578,37 +606,10 @@ const SimEvalCard: React.FC<{
                 </Button>
               </div>
             )}
-          </Field>
-          <Field label="动作平滑">
-            <input
-              type="range"
-              min={0}
-              max={0.9}
-              step={0.05}
-              value={Number(smooth) || 0}
-              onChange={(e) => setSmooth(e.target.value)}
-              className="w-full mt-2 accent-cyan-500"
-            />
-            <div className="text-[11px] text-slate-600 mt-1">
-              当前 {Number(smooth) || 0}（0=关；越大越稳但越滞后）
-            </div>
-          </Field>
-          {ensembleSupported !== false && (
-            <Field label="时序集成（留空=关）">
-              <Input
-                value={ensemble}
-                onChange={(e) => setEnsemble(e.target.value)}
-                placeholder="0.01"
-                className="bg-sky-100 border-sky-300 text-slate-900 rounded-lg mt-1 font-mono text-xs"
-              />
-              <div className="text-[11px] text-slate-600 mt-1">
-                当前模型支持该特性（如 ACT）时启用；建议 0.01
-              </div>
-            </Field>
-          )}
+          </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-4">
+        <div className="mt-auto flex flex-wrap items-center gap-4">
           {running ? (
             <Button
               onClick={stop}
@@ -620,7 +621,7 @@ const SimEvalCard: React.FC<{
               ) : (
                 <Square className="h-4 w-4 mr-2" />
               )}
-              停止
+              {stopping ? "Stopping…" : "Stop Simulation Evaluation"}
             </Button>
           ) : (
             <Button
@@ -633,7 +634,7 @@ const SimEvalCard: React.FC<{
               ) : (
                 <Play className="h-4 w-4 mr-2" />
               )}
-              开始仿真评测
+              Start Simulation Evaluation
             </Button>
           )}
           {!localOnly && (

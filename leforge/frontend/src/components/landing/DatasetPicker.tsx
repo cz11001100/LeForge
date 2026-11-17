@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Plus, ExternalLink, Loader2 } from "lucide-react";
+import { Plus, ExternalLink, Download, Loader2 } from "lucide-react";
 import {
   Popover,
   PopoverContent,
@@ -13,6 +13,9 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { DatasetItem } from "@/lib/replayApi";
 
 interface DatasetPickerProps {
@@ -21,6 +24,7 @@ interface DatasetPickerProps {
   onPickExisting: (item: DatasetItem) => void;
   onCreateNew: (name: string) => void;
   onOpenCustom: (repoId: string) => void;
+  onImportHub: (repoId: string) => void;
   children: React.ReactNode;
 }
 
@@ -33,10 +37,12 @@ const DatasetPicker: React.FC<DatasetPickerProps> = ({
   onPickExisting,
   onCreateNew,
   onOpenCustom,
+  onImportHub,
   children,
 }) => {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [hubRepo, setHubRepo] = useState("");
 
   const trimmed = query.trim();
   const matchesExisting = datasets.some(
@@ -162,7 +168,7 @@ const DatasetPicker: React.FC<DatasetPickerProps> = ({
                   className="text-slate-900 aria-selected:bg-sky-200"
                 >
                   <ExternalLink className="mr-2 h-4 w-4" />
-                  Open &quot;{trimmed}&quot; in viewer
+                  在网页打开 &quot;{trimmed}&quot;
                 </CommandItem>
               </CommandGroup>
             )}
@@ -177,6 +183,34 @@ const DatasetPicker: React.FC<DatasetPickerProps> = ({
             {createLabel}
           </button>
         </Command>
+        <div className="border-t border-sky-300 p-3 space-y-1.5">
+          <Label className="text-xs text-slate-600">从 HuggingFace Hub 导入</Label>
+          <div className="flex gap-1.5">
+            <Input
+              value={hubRepo}
+              onChange={(e) =>
+                setHubRepo(e.target.value.replace(/[^A-Za-z0-9._\-/]/g, "_"))
+              }
+              placeholder="org/name"
+              className="bg-sky-50 border-sky-300 text-slate-900 text-sm h-8"
+            />
+            <Button
+              size="sm"
+              className="h-8 shrink-0 bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50"
+              disabled={!REPO_ID_RE.test(hubRepo.trim())}
+              onClick={() => {
+                const id = hubRepo.trim();
+                if (!REPO_ID_RE.test(id)) return;
+                onImportHub(id);
+                setHubRepo("");
+                setOpen(false);
+              }}
+            >
+              <Download className="mr-1 h-3.5 w-3.5" />
+              导入
+            </Button>
+          </div>
+        </div>
       </PopoverContent>
     </Popover>
   );

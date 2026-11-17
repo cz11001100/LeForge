@@ -28,7 +28,6 @@ import {
   ShieldAlert,
   FlaskConical,
   CloudUpload,
-  Boxes,
 } from "lucide-react";
 import { useApi } from "@/contexts/ApiContext";
 import { useHfAuth } from "@/contexts/HfAuthContext";
@@ -68,9 +67,6 @@ interface Props {
   // The flask opens the evaluation dialog; starting and stopping a run lives
   // there, so the card stays a pure entry point.
   onEvaluate: (job: JobRecord) => void;
-  // Same dialog pattern as evaluation: the button opens the sim-eval dialog,
-  // which owns starting and stopping the run.
-  onSimEval: (job: JobRecord) => void;
   onExport?: (job: JobRecord, step: number) => void | Promise<boolean>;
   onResume?: (job: JobRecord) => void;
 }
@@ -99,7 +95,7 @@ const statePresentation: Record<
   interrupted: { label: "已中断", color: "text-amber-700", Icon: AlertTriangle },
 };
 
-const JobCard: React.FC<Props> = ({ job: jobProp, group, onStop, onDelete, onPlay, onEvaluate, onSimEval, onExport, onResume }) => {
+const JobCard: React.FC<Props> = ({ job: jobProp, group, onStop, onDelete, onPlay, onEvaluate, onExport, onResume }) => {
   const navigate = useNavigate();
   const { baseUrl, fetchWithHeaders } = useApi();
   const { auth } = useHfAuth();
@@ -658,34 +654,6 @@ const JobCard: React.FC<Props> = ({ job: jobProp, group, onStop, onDelete, onPla
                   <Loader2 className="w-4 h-4 animate-spin" />
                 ) : (
                   <FlaskConical className="w-4 h-4" />
-                )}
-              </Button>
-            ) : null}
-            {canValidate ? (
-              <Button
-                size="icon"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onSimEval(job);
-                }}
-                className={`h-8 w-8 text-slate-900 ${
-                  job.sim_eval_state === "running"
-                    ? "bg-amber-600 hover:bg-amber-700"
-                    : "bg-teal-600 hover:bg-teal-700"
-                }`}
-                aria-label="Open simulation evaluation"
-                title={
-                  job.sim_eval_state === "running"
-                    ? "仿真评测进行中 — 点击查看"
-                    : job.sim_eval_state === "done"
-                      ? "查看仿真评测结果"
-                      : "Evaluate in simulation"
-                }
-              >
-                {job.sim_eval_state === "running" ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Boxes className="w-4 h-4" />
                 )}
               </Button>
             ) : null}

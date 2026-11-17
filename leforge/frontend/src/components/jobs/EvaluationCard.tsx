@@ -270,14 +270,14 @@ const EvaluationCard: React.FC<{
   const running = state === "running";
 
   return (
-    <Card className="bg-sky-50/70 border-sky-300 rounded-xl">
+    <Card className="flex h-full flex-col bg-sky-50/70 border-sky-300 rounded-xl">
       <CardHeader className="pb-3">
         <CardTitle className="text-slate-900 flex items-center gap-2 text-base">
           <FlaskConical className="h-5 w-5 text-purple-700" />
           模型评测 Model Evaluation
         </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="flex flex-1 flex-col gap-4">
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
           {variants && variants.length > 0 ? (
             <Field label="Checkpoint">
@@ -346,7 +346,7 @@ const EvaluationCard: React.FC<{
           </Field>
         </div>
 
-        <div className="flex flex-wrap items-center gap-4">
+        <div className="mt-auto flex flex-wrap items-center gap-4">
           <div className="flex items-center space-x-3">
             <Switch id="eval_probe" checked={probe} onCheckedChange={setProbe} />
             <Label htmlFor="eval_probe" className="text-slate-700 text-sm">

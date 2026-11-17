@@ -14,6 +14,7 @@
 
 import logging
 import os
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -161,6 +162,75 @@ def list_all_datasets() -> list[dict[str, Any]]:
     out = list(merged.values())
     out.sort(key=lambda d: d["last_modified"] or "", reverse=True)
     return out
+
+
+# ---------------------------------------------------------------------------
+# Import someone else's dataset from the Hub by repo_id.
+# ---------------------------------------------------------------------------
+
+_REPO_ID_RE = re.compile(r"^[\w.\-]+/[\w.\-]+$")
+
+_hub_pull_progress: dict[str, Any] = {
+    "active": False,
+    "repo_id": "",
+    "phase": "",
+    "error": None,
+    "completed": False,
+}
+
+
+def get_hub_pull_progress() -> dict[str, Any]:
+    return dict(_hub_pull_progress)
+
+
+def pull_hub_dataset(repo_id: str) -> dict[str, Any]:
+    """Download a LeRobot dataset from the Hub into the local cache.
+
+    Runs in a background thread (datasets can be GBs); poll
+    ``get_hub_pull_progress`` for status. Once complete the dataset shows up in
+    ``list_all_datasets`` as a local dataset, so it can be viewed, trained on,
+    or merged like any locally recorded one. Private repos need the logged-in HF
+    account to have access, otherwise the download raises.
+    """
+    import threading
+
+    if not _REPO_ID_RE.match(repo_id or ""):
+        return {"success": False, "message": "无效的 repo id，应为 org/name 形式"}
+
+    root = _lerobot_cache_root().resolve()
+    dest = (root / repo_id).resolve()
+    if root not in dest.parents:
+        return {"success": False, "message": "非法路径"}
+
+    if _is_dataset_dir(dest):
+        return {"success": True, "already_local": True, "repo_id": repo_id, "message": "数据集已在本地"}
+
+    if _hub_pull_progress["active"]:
+        return {"success": False, "message": f"已有导入任务在进行中：{_hub_pull_progress['repo_id']}"}
+
+    _hub_pull_progress.update(
+        active=True, repo_id=repo_id, phase="连接 Hub…", error=None, completed=False
+    )
+
+    def _run() -> None:
+        try:
+            from huggingface_hub import snapshot_download
+
+            snapshot_download(
+                repo_id=repo_id,
+                repo_type="dataset",
+                local_dir=str(dest),
+                allow_patterns=["meta/*", "data/*", "videos/*"],
+            )
+            if not _is_dataset_dir(dest):
+                raise RuntimeError("下载完成但没找到 meta/info.json，可能不是 LeRobot 数据集")
+            _hub_pull_progress.update(active=False, completed=True, phase="完成", error=None)
+        except Exception as e:
+            logger.error("Hub pull failed for %s: %s", repo_id, e)
+            _hub_pull_progress.update(active=False, completed=True, phase="失败", error=str(e))
+
+    threading.Thread(target=_run, daemon=True).start()
+    return {"success": True, "started": True, "repo_id": repo_id, "message": "开始下载"}
 
 
 def _video_frame_count(path: Path, fps: float) -> int | None:

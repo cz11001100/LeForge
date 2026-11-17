@@ -181,7 +181,7 @@ const SarmTrainCard: React.FC<{ initialRepoId?: string }> = ({ initialRepoId = "
           {status.training
             ? "训练中…"
             : status.finished_ok
-              ? "训练完成，可在上面的打分卡片里选「SARM（本任务自训）」"
+              ? "训练完成，可在上面的 RA-BC 卡片里选「SARM（本任务自训）」"
               : "训练结束（未确认成功）"}
           {status.log_tail ? ` · ${status.log_tail.split("\n").pop()}` : ""}
         </div>

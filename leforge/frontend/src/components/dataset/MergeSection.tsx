@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, Loader2, Merge } from "lucide-react";
+import { Loader2, Merge } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -61,7 +61,6 @@ const MergeSection: React.FC = () => {
     [datasets],
   );
   const [picked, setPicked] = useState<string[]>([]);
-  const [open, setOpen] = useState(false);
   const [target, setTarget] = useState("");
   const [check, setCheck] = useState<MergeCheck | null>(null);
   const [state, setState] = useState<MergeState | null>(null);
@@ -158,30 +157,13 @@ const MergeSection: React.FC = () => {
   const canMerge = picked.length >= 2 && !!check && !blocked && !!target.trim();
 
   return (
-    <div className="bg-sky-100 border border-sky-300 rounded-lg p-6 mt-8">
-      <div
-        role="button"
-        tabIndex={0}
-        aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            setOpen((v) => !v);
-          }
-        }}
-        className="flex items-center gap-2 mb-4 cursor-pointer select-none"
-      >
+    <div className="rounded-xl border border-sky-300 bg-sky-100/70 p-6 backdrop-blur-xl">
+      <div className="mb-4 flex items-center gap-2">
         <Merge className="w-5 h-5 text-blue-700" />
         <h2 className="text-xl font-semibold text-slate-900">合并数据集 Merge Datasets</h2>
-        {open ? (
-          <ChevronDown className="w-4 h-4 text-slate-600 ml-auto" />
-        ) : (
-          <ChevronRight className="w-4 h-4 text-slate-600 ml-auto" />
-        )}
       </div>
 
-      {!open ? null : local.length === 0 ? (
+      {local.length === 0 ? (
         <p className="text-sm text-slate-600">本地还没有数据集。</p>
       ) : (
         <>

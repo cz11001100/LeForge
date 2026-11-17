@@ -29,7 +29,7 @@ const ScoringModal: React.FC<{
             </div>
             <div className="min-w-0">
               <DialogTitle className="text-left text-xl font-bold">
-                数据集打分 Dataset Scoring{datasetRepoId ? ` · ${datasetRepoId}` : ""}
+                RA-BC{datasetRepoId ? ` · ${datasetRepoId}` : ""}
               </DialogTitle>
               <DialogDescription className="text-left text-sm text-slate-600">
                 查看打分进度、成功率与接管率。

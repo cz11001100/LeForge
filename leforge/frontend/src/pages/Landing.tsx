@@ -18,7 +18,7 @@ import { useHfAuth } from "@/contexts/HfAuthContext";
 import { useRobots } from "@/hooks/useRobots";
 import { useDatasets } from "@/hooks/useDatasets";
 import { useJobsChangedSignal } from "@/hooks/useJobsChangedSignal";
-import { DatasetItem } from "@/lib/replayApi";
+import { DatasetItem, pullHubDataset, getHubPullProgress } from "@/lib/replayApi";
 import { CameraConfig } from "@/components/recording/CameraConfiguration";
 import {
   Popover,
@@ -60,7 +60,7 @@ const Landing = () => {
     deleteRobot,
   } = useRobots();
 
-  const { datasets, loading: datasetsLoading } = useDatasets();
+  const { datasets, loading: datasetsLoading, refresh: refreshDatasets } = useDatasets();
 
   // Recording modal state
   const [showRecordingModal, setShowRecordingModal] = useState(false);
@@ -223,6 +223,42 @@ const Landing = () => {
     openHubViewer(repoId, true);
   };
 
+  const handleImportHub = (repoId: string) => {
+    if (!repoId) return;
+    toast({ title: "开始导入", description: `从 Hub 下载 ${repoId}…` });
+    pullHubDataset(baseUrl, fetchWithHeaders, repoId)
+      .then((res) => {
+        if (!res.success) {
+          toast({ title: "导入失败", description: res.message, variant: "destructive" });
+          return;
+        }
+        if (res.already_local) {
+          toast({ title: "已在本地", description: repoId });
+          refreshDatasets();
+          return;
+        }
+        const timer = window.setInterval(async () => {
+          try {
+            const p = await getHubPullProgress(baseUrl, fetchWithHeaders);
+            if (!p.active && p.completed) {
+              window.clearInterval(timer);
+              if (p.error) {
+                toast({ title: "导入失败", description: p.error, variant: "destructive" });
+              } else {
+                toast({ title: "导入完成", description: `${repoId} 已加入本地数据集` });
+                refreshDatasets();
+              }
+            }
+          } catch {
+            // transient poll error — keep waiting
+          }
+        }, 2000);
+      })
+      .catch((e) =>
+        toast({ title: "导入失败", description: String(e?.message ?? e), variant: "destructive" }),
+      );
+  };
+
   const handleCreateDataset = (name: string) => {
     setDatasetName(name);
     setResume(false);
@@ -373,6 +409,7 @@ const Landing = () => {
               loading={datasetsLoading}
               onPickExisting={handlePickExisting}
               onOpenCustom={handleOpenCustom}
+              onImportHub={handleImportHub}
               onCreateNew={handleCreateDataset}
             >
               <Button

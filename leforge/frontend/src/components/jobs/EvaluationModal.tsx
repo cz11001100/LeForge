@@ -59,7 +59,7 @@ const EvaluationModal: React.FC<Props> = ({ open, onOpenChange, job, group }) =>
         </DialogHeader>
         {activeJob ? (
           <div className="flex-1 overflow-y-auto px-6 py-5">
-            <div className="grid gap-4 xl:grid-cols-2 xl:items-start">
+            <div className="grid gap-4 xl:grid-cols-2">
               <EvaluationCard
                 key={activeJob.id}
                 job={activeJob}

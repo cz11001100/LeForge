@@ -1,13 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog";
-import { Loader2, CheckCircle, AlertCircle } from "lucide-react";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
+import DialogHeading from "@/components/ui/DialogHeading";
+import { Loader2, CheckCircle, AlertCircle, Search } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useApi } from "@/contexts/ApiContext";
 
@@ -223,17 +218,17 @@ const PortDetectionModal: React.FC<PortDetectionModalProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="bg-sky-100 border-sky-200 text-slate-900 sm:max-w-[500px] p-8">
-        <DialogHeader>
-          <DialogTitle className="text-slate-900 text-center text-xl font-bold">
-            端口检测 Port Detection
-          </DialogTitle>
-          <DialogDescription className="text-slate-600 text-center">
-            Detect the USB port for your {robotType} arm
-          </DialogDescription>
-        </DialogHeader>
+      <DialogContent className="flex w-[calc(100%-1.5rem)] flex-col gap-0 overflow-hidden border-sky-200 bg-sky-100 p-0 text-slate-900 sm:max-w-[560px]">
+        <DialogHeading
+          icon={<Search className="h-4 w-4 text-cyan-600" />}
+          iconClassName="bg-cyan-100"
+          title="端口检测 Port Detection"
+          description={`检测 ${robotType} 机械臂的 USB 端口`}
+        />
 
-        <div className="py-4">{renderStepContent()}</div>
+        <div className="flex-1 overflow-y-auto px-6 py-5">
+          {renderStepContent()}
+        </div>
       </DialogContent>
     </Dialog>
   );

@@ -61,7 +61,6 @@ import { randomGreeting } from "@/lib/greetings";
 import { useHfAuth } from "@/contexts/HfAuthContext";
 import ScoringModal from "./ScoringModal";
 import EvaluationModal from "./EvaluationModal";
-import SimEvalModal from "./SimEvalModal";
 import { CARD_BOX_W } from "./CheckpointDropdown";
 
 // The registry holds every job ever run; the untracked section collapses
@@ -275,9 +274,6 @@ const JobsSection: React.FC = () => {
   const [evaluationModalOpen, setEvaluationModalOpen] = useState(false);
   const [evaluationJob, setEvaluationJob] = useState<JobRecord | null>(null);
   const [evaluationGroup, setEvaluationGroup] = useState<JobRecord[] | null>(null);
-  const [simEvalModalOpen, setSimEvalModalOpen] = useState(false);
-  const [simEvalJob, setSimEvalJob] = useState<JobRecord | null>(null);
-  const [simEvalGroup, setSimEvalGroup] = useState<JobRecord[] | null>(null);
   const [inferenceJob, setInferenceJob] = useState<JobRecord | null>(null);
   const [inferenceStep, setInferenceStep] = useState<number | null>(null);
   const [sshStatus, setSshStatus] = useState<SSHStatus | null>(null);
@@ -573,14 +569,6 @@ const JobsSection: React.FC = () => {
     [groupMembersOf],
   );
 
-  const handleSimEval = useCallback(
-    (job: JobRecord) => {
-      setSimEvalJob(job);
-      setSimEvalGroup(groupMembersOf(job.id));
-      setSimEvalModalOpen(true);
-    },
-    [groupMembersOf],
-  );
   // Hub jobs already mirrored by a local JobRecord get their richer card via
   // trackedCloudJobs; everything else from the hub gets a plain HubJobCard.
   const trackedHfJobIds = useMemo(
@@ -792,7 +780,6 @@ const JobsSection: React.FC = () => {
                   onDelete={handleDelete}
                   onPlay={handlePlay}
                   onEvaluate={handleEvaluate}
-                  onSimEval={handleSimEval}
                   onExport={handleExport}
                   onResume={handleResume}
                 />
@@ -805,7 +792,6 @@ const JobsSection: React.FC = () => {
                   onDelete={handleDelete}
                   onPlay={handlePlay}
                   onEvaluate={handleEvaluate}
-                  onSimEval={handleSimEval}
                   onExport={handleExport}
                   onResume={handleResume}
                 />
@@ -818,7 +804,6 @@ const JobsSection: React.FC = () => {
                   onDelete={handleDelete}
                   onPlay={handlePlay}
                   onEvaluate={handleEvaluate}
-                  onSimEval={handleSimEval}
                   onExport={handleExport}
                   onResume={handleResume}
                 />
@@ -857,7 +842,6 @@ const JobsSection: React.FC = () => {
                     onDelete={handleDelete}
                     onPlay={handlePlay}
                     onEvaluate={handleEvaluate}
-                    onSimEval={handleSimEval}
                     onExport={handleExport}
                     onResume={handleResume}
                   />
@@ -950,7 +934,6 @@ const JobsSection: React.FC = () => {
                   onDelete={handleDelete}
                   onPlay={handlePlay}
                   onEvaluate={handleEvaluate}
-                  onSimEval={handleSimEval}
                   onExport={handleExport}
                   onResume={handleResume}
                 />
@@ -963,7 +946,6 @@ const JobsSection: React.FC = () => {
                   onDelete={handleDelete}
                   onPlay={handlePlay}
                   onEvaluate={handleEvaluate}
-                  onSimEval={handleSimEval}
                   onExport={handleExport}
                   onResume={handleResume}
                 />
@@ -976,7 +958,6 @@ const JobsSection: React.FC = () => {
                   onDelete={handleDelete}
                   onPlay={handlePlay}
                   onEvaluate={handleEvaluate}
-                  onSimEval={handleSimEval}
                   onExport={handleExport}
                   onResume={handleResume}
                 />
@@ -1010,13 +991,6 @@ const JobsSection: React.FC = () => {
         onOpenChange={setEvaluationModalOpen}
         job={evaluationJob}
         group={evaluationGroup ?? undefined}
-      />
-
-      <SimEvalModal
-        open={simEvalModalOpen}
-        onOpenChange={setSimEvalModalOpen}
-        job={simEvalJob}
-        group={simEvalGroup ?? undefined}
       />
 
       <ScoringModal

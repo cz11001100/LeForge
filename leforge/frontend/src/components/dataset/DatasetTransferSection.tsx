@@ -110,7 +110,6 @@ const DatasetTransferSection: React.FC = () => {
   const { baseUrl, fetchWithHeaders } = useApi();
   const { toast } = useToast();
   const { datasets, refresh } = useDatasets();
-  const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<"import" | "export">("import");
   const [formats, setFormats] = useState<FormatInfo[]>([]);
   const [progress, setProgress] = useState<IoProgress>(emptyProgress);
@@ -179,12 +178,12 @@ const DatasetTransferSection: React.FC = () => {
   }, [baseUrl, fetchWithHeaders, followProgress]);
 
   useEffect(() => {
-    if (!open || formats.length) return;
+    if (formats.length) return;
     fetchWithHeaders(`${baseUrl}/dataset-io/formats`)
       .then((r) => r.json())
       .then((data) => setFormats(data.formats || []))
       .catch(() => undefined);
-  }, [open, formats.length, baseUrl, fetchWithHeaders]);
+  }, [formats.length, baseUrl, fetchWithHeaders]);
 
   const importFormats = formats.filter((f) => f.directions.includes("import"));
   const exportFormats = formats.filter((f) => f.directions.includes("export"));
@@ -353,30 +352,14 @@ const DatasetTransferSection: React.FC = () => {
   const result = progress.result;
 
   return (
-    <div className="mt-8">
-      <div className="bg-sky-100 rounded-lg border border-sky-300">
-        <button
-          type="button"
-          className="w-full flex items-center justify-between px-6 py-4 text-left"
-          onClick={() => setOpen((v) => !v)}
-        >
-          <div className="flex items-center gap-3">
-            <ArrowLeftRight className="w-5 h-5 text-cyan-700" />
-            <div>
-              <h2 className="text-xl font-semibold text-slate-900">
-                数据集转换 Dataset Conversion
-              </h2>
-            </div>
-          </div>
-          {open ? (
-            <ChevronDown className="w-5 h-5 text-slate-600" />
-          ) : (
-            <ChevronRight className="w-5 h-5 text-slate-600" />
-          )}
-        </button>
-
-        {open && (
-          <div className="px-6 pb-6 space-y-5">
+    <div className="rounded-xl border border-sky-300 bg-sky-100/70 backdrop-blur-xl">
+      <div className="flex items-center gap-3 px-6 py-4">
+        <ArrowLeftRight className="w-5 h-5 text-cyan-700" />
+        <h2 className="text-xl font-semibold text-slate-900">
+          数据集转换 Dataset Conversion
+        </h2>
+      </div>
+      <div className="px-6 pb-6 space-y-5">
             <div className="flex gap-2">
               <Button
                 variant={tab === "import" ? "default" : "outline"}
@@ -702,8 +685,6 @@ const DatasetTransferSection: React.FC = () => {
                 </Button>
               </div>
             )}
-          </div>
-        )}
       </div>
     </div>
   );

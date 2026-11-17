@@ -1,19 +1,25 @@
 import React, { useState } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate, useLocation, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import {
   ArrowLeft,
+  ArrowLeftRight,
+  ChevronDown,
+  ChevronUp,
+  Gauge,
+  ListVideo,
+  Search,
+  ShieldCheck,
   Upload as UploadIcon,
   Database,
   ExternalLink,
   CheckCircle,
-  ChevronDown,
-  ChevronRight,
-  ListVideo,
   Loader2,
   Trash2,
+  Wrench,
 } from "lucide-react";
 import { useApi } from "@/contexts/ApiContext";
 import {
@@ -54,6 +60,62 @@ import RolloutScoreCard from "@/components/jobs/RolloutScoreCard";
 import SarmTrainCard from "@/components/jobs/SarmTrainCard";
 import DatasetViewer from "@/components/datasets/DatasetViewer";
 
+type TabKey = "episodes" | "quality" | "scoring" | "tools";
+
+const DETAIL_TABS: {
+  key: TabKey;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+}[] = [
+  { key: "episodes", label: "分集", icon: ListVideo },
+  { key: "quality", label: "质量", icon: ShieldCheck },
+  { key: "scoring", label: "RA-BC", icon: Gauge },
+  { key: "tools", label: "工具", icon: Wrench },
+];
+
+const TOOL_TABS = DETAIL_TABS.filter((t) => t.key === "scoring" || t.key === "tools");
+
+const TabBar: React.FC<{
+  value: TabKey;
+  onChange: (key: TabKey) => void;
+  tabs: typeof DETAIL_TABS;
+}> = ({ value, onChange, tabs }) => (
+  <div className="mt-6 mb-4 flex flex-wrap items-center gap-1 border-b border-sky-300/60">
+    {tabs.map(({ key, label, icon: Icon }) => (
+      <button
+        key={key}
+        type="button"
+        onClick={() => onChange(key)}
+        aria-current={value === key ? "page" : undefined}
+        className={`-mb-px flex items-center gap-2 border-b-2 px-4 py-2 text-sm font-medium transition-colors ${
+          value === key
+            ? "border-sky-400 text-slate-900"
+            : "border-transparent text-slate-600 hover:text-slate-800"
+        }`}
+      >
+        <Icon className="h-4 w-4" />
+        {label}
+      </button>
+    ))}
+  </div>
+);
+
+const Stat: React.FC<{ label: string; value: string; sub?: string }> = ({
+  label,
+  value,
+  sub,
+}) => (
+  <div className="min-w-0">
+    <dt className="text-xs text-slate-600">{label}</dt>
+    <dd className="mt-0.5 truncate text-sm font-semibold text-slate-900">
+      {value}
+      {sub ? (
+        <span className="ml-1 text-xs font-normal text-slate-600">{sub}</span>
+      ) : null}
+    </dd>
+  </div>
+);
+
 const Upload = () => {
   const location = useLocation();
   const navigate = useNavigate();
@@ -62,22 +124,28 @@ const Upload = () => {
 
   // Get initial dataset info from navigation state
   const initialDatasetInfo = location.state?.datasetInfo as DatasetInfo;
-  // A "打分" jump from a dataset card preselects it in the scoring section.
+  // An "RA-BC" jump from a dataset card preselects it in the scoring section.
   const scoreRepoId = (location.state?.scoreRepoId as string | undefined) ?? "";
-  const [episodesOpen, setEpisodesOpen] = useState(false);
 
-  // Arriving from a dataset card's 打分 button: land on the scoring section.
-  React.useEffect(() => {
-    if (!scoreRepoId) return;
-    const timer = window.setTimeout(
-      () =>
-        document
-          .getElementById("dataset-scoring")
-          ?.scrollIntoView({ behavior: "smooth", block: "start" }),
-      400,
-    );
-    return () => window.clearTimeout(timer);
-  }, [scoreRepoId]);
+  // Tabs replace the old accordion stack; ?tab= keeps deep links working and a
+  // RA-BC jump lands straight on the scoring panel.
+  const [params, setParams] = useSearchParams();
+  const rawTab = params.get("tab") as TabKey | null;
+  const tab: TabKey =
+    rawTab && DETAIL_TABS.some((t) => t.key === rawTab)
+      ? rawTab
+      : scoreRepoId
+        ? "scoring"
+        : "episodes";
+  const setTab = (next: TabKey) => {
+    const n = new URLSearchParams(params);
+    n.set("tab", next);
+    setParams(n, { replace: true });
+  };
+
+  const [episodeQuery, setEpisodeQuery] = useState("");
+  const [episodeSort, setEpisodeSort] = useState<"index" | "length">("index");
+  const [episodeAsc, setEpisodeAsc] = useState(true);
 
   // State for actual dataset info (will be loaded from backend)
   const [datasetInfo, setDatasetInfo] = useState<DatasetInfo | null>(null);
@@ -508,6 +576,33 @@ const Upload = () => {
   const allEpisodesSelected =
     episodeCount > 0 && selectedEpisodes.size === episodeCount;
 
+  const visibleEpisodes = (() => {
+    const q = episodeQuery.trim().toLowerCase();
+    const rows = q
+      ? episodeRows.filter(
+          ({ index, length }) =>
+            String(index).includes(q) ||
+            `#${String(index).padStart(3, "0")}`.includes(q) ||
+            String(length).includes(q),
+        )
+      : episodeRows;
+    const dir = episodeAsc ? 1 : -1;
+    return [...rows].sort((a, b) =>
+      episodeSort === "index"
+        ? (a.index - b.index) * dir
+        : (a.length - b.length) * dir,
+    );
+  })();
+
+  const toggleEpisodeSort = (field: "index" | "length") => {
+    if (episodeSort === field) {
+      setEpisodeAsc((v) => !v);
+    } else {
+      setEpisodeSort(field);
+      setEpisodeAsc(field === "index");
+    }
+  };
+
   const toggleAllEpisodes = () => {
     setSelectedEpisodes(
       allEpisodesSelected
@@ -603,7 +698,7 @@ const Upload = () => {
   if (!datasetInfo) {
     return (
       <div className="leforge-page min-h-screen text-slate-900 p-8">
-        <div className="max-w-[1360px] mx-auto">
+        <div className="max-w-[1440px] mx-auto">
           <div className="flex items-center gap-4 mb-6">
             <Button
               onClick={() => navigate("/")}
@@ -616,14 +711,29 @@ const Upload = () => {
             <Logo iconOnly />
             <h1 className="text-3xl font-bold tracking-tight">数据集 Datasets</h1>
           </div>
-          <DatasetTransferSection />
-          <MergeSection />
-          <div id="dataset-scoring" className="mt-8">
-            <RolloutScoreCard initialRepoId={scoreRepoId} />
-          </div>
-          <div className="mt-8">
-            <SarmTrainCard initialRepoId={scoreRepoId} />
-          </div>
+          {(() => {
+            const viewTab: TabKey = tab === "tools" ? "tools" : "scoring";
+            return (
+              <>
+                <TabBar value={viewTab} onChange={setTab} tabs={TOOL_TABS} />
+                <section className={viewTab === "scoring" ? "" : "hidden"}>
+                  <div
+                    id="dataset-scoring"
+                    className="grid gap-6 xl:grid-cols-2 xl:items-start"
+                  >
+                    <RolloutScoreCard initialRepoId={scoreRepoId} />
+                    <SarmTrainCard initialRepoId={scoreRepoId} />
+                  </div>
+                </section>
+                <section className={viewTab === "tools" ? "" : "hidden"}>
+                  <div className="grid gap-6 xl:grid-cols-2 xl:items-start">
+                    <DatasetTransferSection />
+                    <MergeSection />
+                  </div>
+                </section>
+              </>
+            );
+          })()}
         </div>
       </div>
     );
@@ -656,7 +766,7 @@ const Upload = () => {
 
   return (
     <div className="leforge-page min-h-screen text-slate-900 p-8">
-      <div className="max-w-[1360px] mx-auto">
+      <div className="max-w-[1440px] mx-auto">
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center gap-3">
@@ -690,31 +800,126 @@ const Upload = () => {
           </div>
         </div>
 
-        {/* 数据集概览：身份、内容统计与质量分析合并为一张卡 */}
-        <div className="bg-sky-100 rounded-lg p-6 border border-sky-300 mb-8">
-          <div className="flex items-center justify-between gap-4 mb-5">
-            <h2 className="text-xl font-semibold text-slate-900">数据集概览 Overview</h2>
-            <div className="flex items-center gap-2">
-              <span
-                className={`rounded-full border px-3 py-1 text-xs ${uploadStatus.cls}`}
-              >
-                {uploadStatus.text}
-              </span>
-              {scoredBackends.includes("robometer") ? (
-                <span className="rounded-full border border-purple-600/50 bg-purple-100 px-3 py-1 text-xs text-purple-700">
-                  Robometer 已评分
+        {/* 身份条：任何标签下都能看到的关键信息与主操作 */}
+        <section className="rounded-xl border border-sky-300 bg-sky-100/70 p-5 backdrop-blur-xl">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="min-w-0 flex-1">
+              <div className="flex min-w-0 items-center gap-2">
+                {onHub ? (
+                  <CheckCircle className="h-5 w-5 shrink-0 text-green-600" />
+                ) : (
+                  <Database className="h-5 w-5 shrink-0 text-blue-500" />
+                )}
+                <span className="truncate font-mono text-lg font-semibold">
+                  {datasetInfo.dataset_repo_id}
                 </span>
-              ) : null}
-              {scoredBackends.includes("sarm") ? (
-                <span className="rounded-full border border-cyan-600/50 bg-cyan-100 px-3 py-1 text-xs text-cyan-700">
-                  SARM 已评分
+              </div>
+              <dl className="mt-3 flex flex-wrap gap-x-8 gap-y-2">
+                <Stat label="集数" value={String(episodeCount)} />
+                <Stat label="帧率" value={fps ? `${fps} FPS` : "-"} />
+                <Stat
+                  label="平均长度"
+                  value={meanLength ? `${meanLength} 帧` : "-"}
+                  sub={meanLength ? `±${lengthStd}` : undefined}
+                />
+                <Stat label="机器人" value={datasetInfo.robot_type || "-"} />
+                <Stat
+                  label="任务"
+                  value={datasetInfo.tasks?.[0]?.task ?? "-"}
+                  sub={
+                    datasetInfo.tasks?.length
+                      ? `${datasetInfo.tasks.length} 个`
+                      : undefined
+                  }
+                />
+              </dl>
+            </div>
+
+            <div className="flex flex-col items-end gap-3">
+              <div className="flex flex-wrap justify-end gap-2">
+                <span
+                  className={`rounded-full border px-3 py-1 text-xs ${uploadStatus.cls}`}
+                >
+                  {uploadStatus.text}
                 </span>
-              ) : null}
+                {checkingHealth ? (
+                  <span className="rounded-full border border-sky-300 px-3 py-1 text-xs text-slate-600">
+                    完整性检查中…
+                  </span>
+                ) : health ? (
+                  <span
+                    className={`rounded-full border px-3 py-1 text-xs ${
+                      health.healthy
+                        ? "border-green-600/50 bg-green-100 text-green-700"
+                        : "border-red-600/50 bg-red-100 text-red-700"
+                    }`}
+                  >
+                    {health.healthy ? "完整性 正常" : "完整性 异常"}
+                  </span>
+                ) : null}
+                {scoredBackends.includes("robometer") ? (
+                  <span className="rounded-full border border-purple-600/50 bg-purple-100 px-3 py-1 text-xs text-purple-700">
+                    Robometer 已评分
+                  </span>
+                ) : null}
+                {scoredBackends.includes("sarm") ? (
+                  <span className="rounded-full border border-cyan-600/50 bg-cyan-100 px-3 py-1 text-xs text-cyan-700">
+                    SARM 已评分
+                  </span>
+                ) : null}
+              </div>
+
+              <div className="flex flex-wrap justify-end gap-3">
+                <Button
+                  onClick={() => setViewerOpen(true)}
+                  variant="outline"
+                  className="border-cyan-600/60 text-cyan-700 hover:bg-cyan-100"
+                >
+                  <ListVideo className="w-4 h-4 mr-2" />
+                  本地可视化
+                </Button>
+                <Button
+                  onClick={handleUploadToHub}
+                  disabled={isUploading}
+                  className="bg-blue-500 hover:bg-blue-600 text-white"
+                >
+                  {isUploading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Uploading…
+                    </>
+                  ) : (
+                    <>
+                      <UploadIcon className="w-4 h-4 mr-2" />
+                      {isAlreadyOnHub ? "Re-sync to Hub" : "Upload to HuggingFace Hub"}
+                    </>
+                  )}
+                </Button>
+                {isAlreadyOnHub ? (
+                  <Button
+                    onClick={() => openInHubViewer(datasetInfo.dataset_repo_id)}
+                    variant="outline"
+                    className="border-sky-300 text-slate-700 hover:bg-sky-200"
+                  >
+                    <ExternalLink className="w-4 h-4 mr-2" />
+                    View on Hub
+                  </Button>
+                ) : (
+                  <Button
+                    onClick={handleSkipUpload}
+                    disabled={isUploading}
+                    variant="outline"
+                    className="border-sky-300 text-slate-700 hover:bg-sky-200"
+                  >
+                    Not Now
+                  </Button>
+                )}
+              </div>
             </div>
           </div>
 
           {isUploading && (
-            <div className="mb-5">
+            <div className="mt-4">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-sm text-slate-700">
                   {uploadProgress.phase || "准备中…"}
@@ -738,170 +943,49 @@ const Upload = () => {
           )}
 
           {uploadError && !isUploading && (
-            <div className="mb-5 rounded-lg border border-red-600/50 bg-red-100 p-3 text-sm text-red-700">
+            <div className="mt-4 rounded-lg border border-red-600/50 bg-red-100 p-3 text-sm text-red-700">
               上传失败：{uploadError}
             </div>
           )}
+        </section>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <Tile label="仓库 repo_id" className="col-span-2">
-              <span className="font-mono text-sm font-semibold">
-                {datasetInfo.dataset_repo_id}
-              </span>
-            </Tile>
-            <Tile label="集数 episodes" value={String(episodeCount)} />
-            <Tile label="帧率 fps" value={`${fps} FPS`} />
-            <Tile
-              label="机器人 robot_type"
-              value={datasetInfo.robot_type || "-"}
-            />
-            <Tile
-              label="平均长度 avg_length"
-              value={meanLength ? `${meanLength} 帧` : "-"}
-              sub={meanLength ? `±${lengthStd}` : undefined}
-            />
-            <Tile label="任务 tasks" className="col-span-2">
-              {datasetInfo.tasks?.length ? (
-                <ul className="space-y-0.5">
-                  {datasetInfo.tasks.map((t) => (
-                    <li key={t.task} className="flex items-center gap-2 font-semibold">
-                      <span>{t.task}</span>
-                      {t.episodes > 0 && (
-                        <span className="text-xs font-normal text-slate-600">
-                          {t.episodes} 集
-                        </span>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                "-"
-              )}
-            </Tile>
-          </div>
-
-          {datasetInfo.dataset_repo_id && (
-            <div className="mt-6 border-t border-sky-300 pt-5">
-              <DatasetSummaryCard datasetRepoId={datasetInfo.dataset_repo_id} />
-            </div>
-          )}
-
-          {/* 操作 */}
-          <div className="mt-6 border-t border-sky-300 pt-5 flex flex-wrap gap-3">
-            <Button
-              onClick={() => setViewerOpen(true)}
-              variant="outline"
-              className="border-cyan-600/60 text-cyan-700 hover:bg-cyan-100 hover:text-cyan-700"
-            >
-              <ListVideo className="w-4 h-4 mr-2" />
-              本地可视化
-            </Button>
-            <Button
-              onClick={handleUploadToHub}
-              disabled={isUploading}
-              className="bg-blue-500 hover:bg-blue-600 text-white"
-            >
-              {isUploading ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Uploading…
-                </>
-              ) : (
-                <>
-                  <UploadIcon className="w-4 h-4 mr-2" />
-                  {isAlreadyOnHub ? "Re-sync to Hub" : "Upload to HuggingFace Hub"}
-                </>
-              )}
-            </Button>
-
-            {isAlreadyOnHub ? (
-              <Button
-                onClick={() => openInHubViewer(datasetInfo.dataset_repo_id)}
-                variant="outline"
-                className="border-sky-300 text-slate-700 hover:bg-sky-200 hover:text-slate-900"
-              >
-                <ExternalLink className="w-4 h-4 mr-2" />
-                View on Hub
-              </Button>
-            ) : (
-              <Button
-                onClick={handleSkipUpload}
-                disabled={isUploading}
-                variant="outline"
-                className="border-sky-300 text-slate-700 hover:bg-sky-200 hover:text-slate-900"
-              >
-                Not Now
-              </Button>
-            )}
-          </div>
-
-          {datasetInfo.dataset_repo_id && (
-            <DatasetViewer
-              open={viewerOpen}
-              onOpenChange={setViewerOpen}
-              repoId={datasetInfo.dataset_repo_id}
-            />
-          )}
-        </div>
-
-        {/* Dataset Health / Corruption Warning */}
-        {checkingHealth && (
-          <div className="bg-sky-100 rounded-lg p-4 border border-sky-300 mb-8 flex items-center gap-3">
-            <Loader2 className="w-5 h-5 text-blue-700 animate-spin" />
-            <span className="text-slate-700">正在检查数据集完整性…</span>
-          </div>
-        )}
-
-        {health && !health.healthy && (
-          <DatasetHealthWarning
-            health={health}
-            isRepairing={isRepairing}
-            repairProgress={repairProgress}
-            onRepair={handleRepairDataset}
-            onDelete={() => setShowDeleteConfirm(true)}
+        {datasetInfo.dataset_repo_id && (
+          <DatasetViewer
+            open={viewerOpen}
+            onOpenChange={setViewerOpen}
+            repoId={datasetInfo.dataset_repo_id}
           />
         )}
 
-        {health && health.healthy && (
-          <div className="bg-green-100 border border-green-600/50 rounded-lg p-4 mb-8 flex items-center gap-3">
-            <CheckCircle className="w-5 h-5 text-green-700" />
-            <span className="text-green-700 text-sm">
-              数据集完整，{health.total_episodes} 集全部文件可读
-            </span>
-          </div>
-        )}
+        <TabBar value={tab} onChange={setTab} tabs={DETAIL_TABS} />
 
-        {/* Episodes List */}
-        {episodeCount > 0 && (
-          <div className="bg-sky-100 rounded-lg p-6 border border-sky-300 mb-8">
-            <div className="flex items-center justify-between mb-4 gap-4">
-              <div
-                role="button"
-                tabIndex={0}
-                aria-expanded={episodesOpen}
-                onClick={() => setEpisodesOpen((v) => !v)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    setEpisodesOpen((v) => !v);
-                  }
-                }}
-                className="flex items-center gap-2 cursor-pointer select-none"
-              >
-                <ListVideo className="w-5 h-5 text-blue-700" />
-                <h2 className="text-xl font-semibold text-slate-900">分集列表 Episodes</h2>
-                <span className="text-sm text-slate-600">
-                  共 {episodeCount} 集
-                  {selectedEpisodes.size > 0 && (
-                    <span className="text-red-700">
-                      {" "}
-                      · 已选 {selectedEpisodes.size} 集
-                    </span>
-                  )}
-                </span>
-              </div>
-              <div className="flex items-center gap-4">
-                <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
+        {/* 分集：搜索 + 排序 + 批量删除 */}
+        <section className={tab === "episodes" ? "" : "hidden"}>
+          <div className="rounded-xl border border-sky-300 bg-sky-100/70 backdrop-blur-xl">
+            <div className="flex flex-wrap items-center gap-3 border-b border-sky-300/60 px-5 py-4">
+              <ListVideo className="h-5 w-5 text-blue-700" />
+              <h2 className="text-lg font-semibold text-slate-900">分集列表</h2>
+              <span className="text-sm text-slate-600">
+                {visibleEpisodes.length} / {episodeCount} 集
+                {selectedEpisodes.size > 0 && (
+                  <span className="text-red-700">
+                    {" "}
+                    · 已选 {selectedEpisodes.size}
+                  </span>
+                )}
+              </span>
+              <div className="ml-auto flex flex-wrap items-center gap-3">
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-600" />
+                  <Input
+                    value={episodeQuery}
+                    onChange={(e) => setEpisodeQuery(e.target.value)}
+                    placeholder="搜索集数或帧数…"
+                    className="h-8 w-44 pl-8 bg-sky-50 border-sky-300 text-sm"
+                    aria-label="搜索分集"
+                  />
+                </div>
+                <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-600">
                   <Checkbox
                     checked={allEpisodesSelected}
                     onCheckedChange={toggleAllEpisodes}
@@ -921,24 +1005,13 @@ const Upload = () => {
                   ) : (
                     <Trash2 className="w-4 h-4 mr-2" />
                   )}
-                  Delete Selected
+                  删除所选
                 </Button>
-                <button
-                  type="button"
-                  aria-label={episodesOpen ? "收起分集列表" : "展开分集列表"}
-                  onClick={() => setEpisodesOpen((v) => !v)}
-                  className="text-slate-600 hover:text-slate-900"
-                >
-                  {episodesOpen ? (
-                    <ChevronDown className="w-4 h-4" />
-                  ) : (
-                    <ChevronRight className="w-4 h-4" />
-                  )}
-                </button>
               </div>
             </div>
+
             {isDeletingEpisode && repairProgress && (
-              <div className="mb-4 p-3 bg-sky-100/80 rounded-lg border border-sky-300">
+              <div className="mx-5 mt-4 rounded-lg border border-sky-300 bg-sky-100/80 p-3">
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
                     <Loader2 className="w-4 h-4 text-blue-700 animate-spin" />
@@ -963,58 +1036,148 @@ const Upload = () => {
                 )}
               </div>
             )}
-            {episodesOpen && (
-            <div className="space-y-2 max-h-96 overflow-y-auto">
-              {episodeRows.map(({ index, length }) => {
-                const isShort =
-                  length > 0 && medianLength > 0 && length < medianLength * 0.5;
-                return (
-                  <div
-                    key={index}
-                    className={`flex items-center gap-4 bg-sky-50 rounded-lg px-4 py-3 border transition-colors ${
-                      selectedEpisodes.has(index)
-                        ? "border-red-500/60"
-                        : "border-sky-300 hover:border-sky-300"
-                    }`}
-                  >
-                    <Checkbox
-                      checked={selectedEpisodes.has(index)}
-                      onCheckedChange={() => toggleEpisode(index)}
-                      disabled={isDeletingEpisode}
-                      aria-label={`选择第 ${index} 集`}
-                    />
-                    <span className="text-green-700 font-mono text-sm">
-                      #{index.toString().padStart(3, "0")}
-                    </span>
-                    <span className="text-slate-700 text-sm">第 {index} 集</span>
-                    {length > 0 && (
-                      <span
-                        className={`text-xs ${isShort ? "text-amber-700" : "text-slate-600"}`}
+
+            <div className="max-h-[60vh] overflow-y-auto">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 z-10 bg-sky-100/95 backdrop-blur">
+                  <tr className="text-left text-xs text-slate-600">
+                    <th className="w-10 px-4 py-2" />
+                    <th className="px-4 py-2">
+                      <button
+                        type="button"
+                        onClick={() => toggleEpisodeSort("index")}
+                        className="flex items-center gap-1 hover:text-slate-900"
                       >
-                        {length} 帧
-                        {fps ? ` · ${(length / fps).toFixed(1)} 秒` : ""}
-                        {isShort ? " · 不足中位数一半" : ""}
-                      </span>
-                    )}
-                  </div>
-                );
-              })}
+                        集数
+                        {episodeSort === "index" ? (
+                          episodeAsc ? (
+                            <ChevronUp className="h-3 w-3" />
+                          ) : (
+                            <ChevronDown className="h-3 w-3" />
+                          )
+                        ) : null}
+                      </button>
+                    </th>
+                    <th className="px-4 py-2">
+                      <button
+                        type="button"
+                        onClick={() => toggleEpisodeSort("length")}
+                        className="flex items-center gap-1 hover:text-slate-900"
+                      >
+                        帧数
+                        {episodeSort === "length" ? (
+                          episodeAsc ? (
+                            <ChevronUp className="h-3 w-3" />
+                          ) : (
+                            <ChevronDown className="h-3 w-3" />
+                          )
+                        ) : null}
+                      </button>
+                    </th>
+                    <th className="px-4 py-2">时长</th>
+                    <th className="px-4 py-2">状态</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visibleEpisodes.map(({ index, length }) => {
+                    const isShort =
+                      length > 0 && medianLength > 0 && length < medianLength * 0.5;
+                    return (
+                      <tr
+                        key={index}
+                        className={`border-t border-sky-300/60 ${
+                          selectedEpisodes.has(index) ? "bg-red-100/40" : ""
+                        }`}
+                      >
+                        <td className="px-4 py-2">
+                          <Checkbox
+                            checked={selectedEpisodes.has(index)}
+                            onCheckedChange={() => toggleEpisode(index)}
+                            disabled={isDeletingEpisode}
+                            aria-label={`选择第 ${index} 集`}
+                          />
+                        </td>
+                        <td className="px-4 py-2 font-mono text-green-700">
+                          #{String(index).padStart(3, "0")}
+                        </td>
+                        <td className="px-4 py-2 tabular-nums text-slate-900">
+                          {length > 0 ? length : "—"}
+                        </td>
+                        <td className="px-4 py-2 tabular-nums text-slate-600">
+                          {length > 0 && fps ? `${(length / fps).toFixed(1)} 秒` : "—"}
+                        </td>
+                        <td className="px-4 py-2 text-xs">
+                          {isShort ? (
+                            <span className="text-amber-700">不足中位数一半</span>
+                          ) : (
+                            <span className="text-slate-600">正常</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              {visibleEpisodes.length === 0 && (
+                <p className="px-4 py-6 text-center text-sm text-slate-600">
+                  没有匹配的分集。
+                </p>
+              )}
             </div>
-            )}
           </div>
-        )}
+        </section>
 
-        <DatasetTransferSection />
+        {/* 质量：完整性检查与内容质检 */}
+        <section className={tab === "quality" ? "space-y-6" : "hidden"}>
+          {checkingHealth && (
+            <div className="bg-sky-100 rounded-lg p-4 border border-sky-300 flex items-center gap-3">
+              <Loader2 className="w-5 h-5 text-blue-700 animate-spin" />
+              <span className="text-slate-700">正在检查数据集完整性…</span>
+            </div>
+          )}
 
-        <MergeSection />
+          {health && !health.healthy && (
+            <DatasetHealthWarning
+              health={health}
+              isRepairing={isRepairing}
+              repairProgress={repairProgress}
+              onRepair={handleRepairDataset}
+              onDelete={() => setShowDeleteConfirm(true)}
+            />
+          )}
 
-        <div id="dataset-scoring" className="mt-8">
-          <RolloutScoreCard initialRepoId={scoreRepoId} />
-        </div>
+          {health && health.healthy && (
+            <div className="bg-green-100 border border-green-600/50 rounded-lg p-4 flex items-center gap-3">
+              <CheckCircle className="w-5 h-5 text-green-700" />
+              <span className="text-green-700 text-sm">
+                数据集完整，{health.total_episodes} 集全部文件可读
+              </span>
+            </div>
+          )}
 
-        <div className="mt-8">
-          <SarmTrainCard initialRepoId={scoreRepoId} />
-        </div>
+          {datasetInfo.dataset_repo_id && (
+            <DatasetSummaryCard datasetRepoId={datasetInfo.dataset_repo_id} />
+          )}
+        </section>
+
+        {/* RA-BC：进度/成功率 + SARM 训练 */}
+        <section className={tab === "scoring" ? "" : "hidden"}>
+          <div
+            id="dataset-scoring"
+            className="grid gap-6 xl:grid-cols-2 xl:items-start"
+          >
+            <RolloutScoreCard initialRepoId={scoreRepoId} />
+            <SarmTrainCard initialRepoId={scoreRepoId} />
+          </div>
+        </section>
+
+        {/* 工具：外部格式转换与数据集合并 */}
+        <section className={tab === "tools" ? "" : "hidden"}>
+          <div className="grid gap-6 xl:grid-cols-2 xl:items-start">
+            <DatasetTransferSection />
+            <MergeSection />
+          </div>
+        </section>
       </div>
 
       <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
@@ -1089,25 +1252,5 @@ const Upload = () => {
     </div>
   );
 };
-
-const Tile: React.FC<{
-  label: string;
-  value?: string;
-  sub?: string;
-  className?: string;
-  children?: React.ReactNode;
-}> = ({ label, value, sub, className = "", children }) => (
-  <div className={`rounded-lg bg-sky-50/70 px-4 py-3 ${className}`}>
-    <p className="mb-1 text-xs text-slate-600">{label}</p>
-    {children ?? (
-      <p className="font-semibold text-slate-900">
-        {value}
-        {sub && (
-          <span className="ml-1 text-xs font-normal text-slate-600">{sub}</span>
-        )}
-      </p>
-    )}
-  </div>
-);
 
 export default Upload;

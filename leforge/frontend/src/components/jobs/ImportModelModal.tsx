@@ -2,13 +2,8 @@ import React, { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
+import DialogHeading from "@/components/ui/DialogHeading";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AlertTriangle, CheckCircle2, Download, Loader2 } from "lucide-react";
 import { useApi } from "@/contexts/ApiContext";
@@ -88,18 +83,15 @@ const ImportModelModal: React.FC<Props> = ({ open, onOpenChange, onImported }) =
         if (!submitting) onOpenChange(next);
       }}
     >
-      <DialogContent className="bg-sky-100 border-sky-200 text-slate-900 sm:max-w-[520px] p-8">
-        <DialogHeader>
-          <DialogTitle className="text-slate-900 text-center text-2xl font-bold">
-            导入模型 Import a model
-          </DialogTitle>
-          <DialogDescription className="text-slate-600 text-center">
-            Point at a local directory or a Hugging Face repo. It appears as a
-            job you can run inference on.
-          </DialogDescription>
-        </DialogHeader>
+      <DialogContent className="flex w-[calc(100%-1.5rem)] flex-col gap-0 overflow-hidden border-sky-200 bg-sky-100 p-0 text-slate-900 sm:max-w-[560px]">
+        <DialogHeading
+          icon={<Download className="h-4 w-4 text-blue-600" />}
+          iconClassName="bg-blue-100"
+          title="导入模型 Import a model"
+          description="指向本地目录或 Hub 仓库，导入后即可推理。"
+        />
 
-        <div className="space-y-4 py-4">
+        <div className="space-y-4 px-6 py-5">
           <div className="space-y-2">
             <Label htmlFor="source" className="text-sm font-medium text-slate-700">
               Local path or Hugging Face repo id
@@ -163,28 +155,29 @@ const ImportModelModal: React.FC<Props> = ({ open, onOpenChange, onImported }) =
             </Alert>
           ) : null}
 
-          <div className="flex gap-3 justify-center pt-2">
-            <Button
-              onClick={handleSubmit}
-              disabled={!source.trim() || submitting}
-              className="bg-green-600 hover:bg-green-700 text-white px-8 disabled:opacity-40"
-            >
-              {submitting ? (
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              ) : (
-                <Download className="w-4 h-4 mr-2" />
-              )}
-              {submitting ? "Importing…" : "Import"}
-            </Button>
-            <Button
-              onClick={() => onOpenChange(false)}
-              disabled={submitting}
-              variant="outline"
-              className="border-sky-400 px-8 text-slate-600 bg-sky-100 hover:bg-sky-200"
-            >
-              Cancel
-            </Button>
           </div>
+
+        <div className="flex flex-col-reverse gap-3 border-t border-sky-200/70 bg-sky-100/60 px-6 py-3 sm:flex-row sm:justify-end">
+          <Button
+            onClick={() => onOpenChange(false)}
+            disabled={submitting}
+            variant="outline"
+            className="border-sky-400 text-slate-600 hover:bg-sky-200 hover:text-slate-900"
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleSubmit}
+            disabled={!source.trim() || submitting}
+            className="bg-green-600 px-6 text-white hover:bg-green-700 disabled:opacity-40"
+          >
+            {submitting ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <Download className="w-4 h-4 mr-2" />
+            )}
+            {submitting ? "Importing…" : "Import"}
+          </Button>
         </div>
       </DialogContent>
     </Dialog>

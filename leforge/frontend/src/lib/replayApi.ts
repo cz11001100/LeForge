@@ -74,6 +74,35 @@ export async function listDatasets(
   });
 }
 
+export interface HubPullProgress {
+  active: boolean;
+  repo_id: string;
+  phase: string;
+  error: string | null;
+  completed: boolean;
+}
+
+export async function pullHubDataset(
+  baseUrl: string,
+  fetcher: Fetcher,
+  repoId: string,
+): Promise<{ success: boolean; message: string; started?: boolean; already_local?: boolean }> {
+  return apiRequest(baseUrl, fetcher, "/datasets/pull-hub", {
+    method: "POST",
+    body: { repo_id: repoId },
+    action: "Import Hub dataset",
+  });
+}
+
+export async function getHubPullProgress(
+  baseUrl: string,
+  fetcher: Fetcher,
+): Promise<HubPullProgress> {
+  return apiRequest<HubPullProgress>(baseUrl, fetcher, "/datasets/pull-hub/progress", {
+    action: "Get Hub pull progress",
+  });
+}
+
 export async function checkDatasetHealth(
   baseUrl: string,
   fetcher: Fetcher,

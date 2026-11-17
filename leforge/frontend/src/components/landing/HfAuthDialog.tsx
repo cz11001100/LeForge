@@ -1,13 +1,8 @@
 import React, { useState } from "react";
-import { Check, Copy, RefreshCw } from "lucide-react";
+import { Check, Copy, RefreshCw, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
+import DialogHeading from "@/components/ui/DialogHeading";
 import { useHfAuth } from "@/contexts/HfAuthContext";
 
 interface HfAuthDialogProps {
@@ -45,16 +40,14 @@ const HfAuthDialog: React.FC<HfAuthDialogProps> = ({ open, onOpenChange }) => {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="bg-sky-100 border-sky-200 text-slate-900">
-        <DialogHeader>
-          <DialogTitle className="text-amber-700">
-            Hugging Face CLI 未配置
-          </DialogTitle>
-          <DialogDescription className="text-slate-600">
-            Uploads, training, and replay-from-Hub require a logged-in HF CLI.
-            Run this in a terminal:
-          </DialogDescription>
-        </DialogHeader>
+      <DialogContent className="flex w-[calc(100%-1.5rem)] flex-col gap-0 overflow-hidden border-sky-200 bg-sky-100 p-0 text-slate-900 sm:max-w-[560px]">
+        <DialogHeading
+          icon={<AlertTriangle className="h-4 w-4 text-amber-600" />}
+          iconClassName="bg-amber-100"
+          title="Hugging Face CLI 未配置"
+          description="上传、训练、Hub 回放都需要已登录的 HF CLI。在终端运行："
+        />
+      <div className="px-6 py-5">
         <pre className="bg-sky-50 p-3 rounded border border-sky-300 text-xs sm:text-sm overflow-x-auto flex items-center justify-between gap-2">
           <code className="text-green-700">{auth.loginCommand}</code>
           <button
@@ -70,19 +63,22 @@ const HfAuthDialog: React.FC<HfAuthDialogProps> = ({ open, onOpenChange }) => {
             )}
           </button>
         </pre>
+      </div>
+      <div className="flex justify-end border-t border-sky-200/70 bg-sky-100/60 px-6 py-3">
         <Button
           variant="outline"
           size="sm"
           onClick={handleRefetch}
           disabled={refetching}
-          className="border-amber-300 bg-transparent text-amber-700 hover:bg-amber-100 hover:text-amber-50"
+          className="border-amber-600/40 bg-transparent text-amber-700 hover:bg-amber-100 hover:text-amber-700"
         >
           <RefreshCw
             className={`w-4 h-4 mr-2 ${refetching ? "animate-spin" : ""}`}
           />
-          I've logged in — recheck
+          我已登录 — 重新检测
         </Button>
-      </DialogContent>
+      </div>
+    </DialogContent>
     </Dialog>
   );
 };
