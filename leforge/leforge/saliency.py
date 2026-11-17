@@ -111,6 +111,39 @@ def find_ball(img_hwc_uint8, colors: list[str]):
     return {"cx": best[0], "cy": best[1], "w": best[2], "h": best[3], "area": best[4]}
 
 
+class TargetBoxJudge:
+    """Per-episode auto success: ball centre inside the target box for K frames.
+
+    Separate from the BoN verifier (which scores individual candidates each
+    decision point). This only latches a boolean once the ball has dwelled in
+    the box for ``confirm_k`` consecutive frames; it never terminates the run.
+    """
+
+    def __init__(self, colors: list[str], confirm_k: int = 10):
+        self.colors = colors
+        self.confirm_k = max(1, int(confirm_k))
+        self._streak = 0
+        self.success = False
+
+    def reset(self) -> None:
+        self._streak = 0
+        self.success = False
+
+    def update(self, img_hwc_uint8, box_norm) -> bool:
+        """box_norm = (x1, y1, x2, y2) in [0,1]; returns the latched success."""
+        inside = False
+        if box_norm is not None:
+            ball = find_ball(img_hwc_uint8, self.colors)
+            if ball is not None:
+                h, w = img_hwc_uint8.shape[:2]
+                x1, y1, x2, y2 = box_norm
+                inside = (x1 * w) <= ball["cx"] <= (x2 * w) and (y1 * h) <= ball["cy"] <= (y2 * h)
+        self._streak = self._streak + 1 if inside else 0
+        if self._streak >= self.confirm_k:
+            self.success = True
+        return self.success
+
+
 def _to_uint8_hwc(tensor):
     """[C,H,W] float in [0,1] (or uint8) → HWC uint8 numpy."""
     import torch

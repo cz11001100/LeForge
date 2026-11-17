@@ -566,7 +566,9 @@ def _parse_and_strip_leforge_args() -> dict[str, float]:
             try:
                 opts[key] = float(value)
             except ValueError:
-                logger.warning("Ignoring malformed leforge arg: %s", arg)
+                # Non-numeric leforge args (BoN mode/verifier/camera/target box)
+                # are kept as strings rather than dropped.
+                opts[key] = value
         else:
             kept.append(arg)
     sys.argv[1:] = kept
@@ -661,6 +663,448 @@ class SmoothingInferenceEngine:
     @property
     def failed(self) -> bool:
         return self._inner.failed
+
+
+# ---------------------------------------------------------------------------
+# Best-of-N (BoN) sampling / verification / auto-judge layer
+# ---------------------------------------------------------------------------
+
+_BON_CONFIG_FILE = _PREVIEW_DIR / "bon_config.json"
+_BON_STATE_FILE = _PREVIEW_DIR / "bon_state.json"
+_BON_LABELS_NAME = "meta/lelab_episode_labels.json"
+_BON_LOG_NAME = "candidate_log.parquet"
+
+
+class BoNController:
+    """Owns BoN config, the aim verifier, the per-episode judge, the candidate
+    log and the published state. The engine only asks it to score / observe.
+
+    Everything here is best-effort: a failure in scoring or logging degrades to
+    greedy execution rather than killing the control loop.
+    """
+
+    def __init__(self, opts: dict, ctx_holder: dict):
+        self._ctx_holder = ctx_holder
+        self.enabled = bool(opts.get("bon_enabled", 0))
+        self.mode = str(opts.get("bon_mode", "bon"))
+        self.n = max(1, int(opts.get("bon_n", 8)))
+        self.sigma_scale = float(opts.get("bon_sigma_scale", 0.15))
+        self.k = max(1, int(opts.get("bon_k", 15)))
+        self.confirm_k = max(1, int(opts.get("bon_confirm_k", 10)))
+        self.verifier = str(opts.get("bon_verifier", "aim"))
+        self.camera = str(opts.get("bon_camera", "up"))
+        self.colors = [c for c in str(opts.get("bon_colors", "red")).split(",") if c]
+        self.target_box = self._parse_box(opts.get("bon_target_box", ""))
+        self.aim_repo = str(opts.get("bon_aim_repo", "") or "")
+        self._fit = None
+        self._verifier_ok = False
+        self._judge = None
+        self._rows: list[dict] = []
+        self._last_scores: list[float] = []
+        self._last_selected = -1
+        self._episode_success = False
+        self._success_count = 0
+        self._fail_count = 0
+        self._last_num_episodes = None
+        self._episode_index = 0
+        self._current_arm = self._arm_for_episode(0)
+        self._arm_stats = {"greedy": [0, 0], "bon": [0, 0]}
+        self._lock = threading.Lock()
+        self._sigma_mean = None
+        self._sigma_m2 = None
+        self._sigma_count = 0
+        self._gripper_idx: list[int] = []
+        self._frame_hw: tuple[int, int] | None = None
+        self._load_verifier()
+        self._reset_judge()
+
+    @staticmethod
+    def _parse_box(raw):
+        if not raw:
+            return None
+        try:
+            v = json.loads(raw) if isinstance(raw, str) else raw
+            x1, y1, x2, y2 = (float(t) for t in v)
+            return (min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2))
+        except Exception:
+            return None
+
+    def _dataset(self):
+        ctx = self._ctx_holder.get("ctx")
+        return getattr(getattr(ctx, "data", None), "dataset", None)
+
+    def _dataset_root(self):
+        ds = self._dataset()
+        root = getattr(ds, "root", None)
+        return Path(root) if root else None
+
+    def _load_verifier(self):
+        if self.verifier != "aim":
+            self._verifier_ok = False
+            return
+        from . import aim
+
+        if self.aim_repo:
+            from lerobot.utils.constants import HF_LEROBOT_HOME
+
+            root = Path(HF_LEROBOT_HOME) / self.aim_repo
+        else:
+            root = self._dataset_root()
+        self._fit = aim.load_calibration(root) if root else None
+        self._verifier_ok = aim.verifier_usable(self._fit)
+        if self.enabled and not self._verifier_ok:
+            logger.warning("BoN aim verifier unavailable/low-R² — falling back to greedy")
+
+    def _reset_judge(self):
+        from .saliency import TargetBoxJudge
+
+        self._judge = TargetBoxJudge(self.colors, self.confirm_k)
+        self._episode_success = False
+
+    def _arm_for_episode(self, index: int) -> str:
+        if self.mode == "alternate":
+            return "bon" if index % 2 == 1 else "greedy"
+        return "greedy" if self.mode == "greedy" else "bon"
+
+    def bon_active(self) -> bool:
+        return self.enabled and self._current_arm == "bon"
+
+    def apply_hot_config(self, cfg: dict):
+        with self._lock:
+            if "n" in cfg:
+                self.n = max(1, int(cfg["n"]))
+            if "sigma_scale" in cfg:
+                self.sigma_scale = float(cfg["sigma_scale"])
+            if "k" in cfg:
+                self.k = max(1, int(cfg["k"]))
+            if "confirm_k" in cfg:
+                self.confirm_k = max(1, int(cfg["confirm_k"]))
+                self._judge.confirm_k = self.confirm_k
+            if "mode" in cfg:
+                self.mode = str(cfg["mode"])
+                self._current_arm = self._arm_for_episode(self._episode_index)
+            if "verifier" in cfg:
+                self.verifier = str(cfg["verifier"])
+                self._load_verifier()
+            if "target_box" in cfg:
+                self.target_box = self._parse_box(cfg["target_box"])
+            if "enabled" in cfg:
+                self.enabled = bool(cfg["enabled"])
+
+    def update_sigma(self, mu):
+        import numpy as np
+
+        x = mu.numpy().reshape(mu.shape[0], -1).mean(axis=0)
+        if self._sigma_mean is None:
+            self._sigma_mean = np.zeros_like(x)
+            self._sigma_m2 = np.zeros_like(x)
+        self._sigma_count += 1
+        delta = x - self._sigma_mean
+        self._sigma_mean += delta / self._sigma_count
+        self._sigma_m2 += delta * (x - self._sigma_mean)
+
+    def sigma_vec(self, dim: int):
+        import numpy as np
+
+        if self._sigma_count >= 2:
+            var = self._sigma_m2 / (self._sigma_count - 1)
+            std = np.sqrt(np.maximum(var, 1e-6))
+        else:
+            std = np.ones(dim)
+        std = std * self.sigma_scale
+        for i in self._gripper_idx:
+            if 0 <= i < dim:
+                std[i] = 0.0
+        return std
+
+    def score(self, end_robot, state):
+        if not self._verifier_ok or self._fit is None or self.target_box is None:
+            return 0.0
+        from . import aim
+
+        cx = (self.target_box[0] + self.target_box[2]) / 2
+        cy = (self.target_box[1] + self.target_box[3]) / 2
+        if self._frame_hw is not None:
+            h, w = self._frame_hw
+            cx, cy = cx * w, cy * h
+        return aim.score_chunk(self._fit, end_robot, state, (cx, cy), self._frame_hw)
+
+    def log_candidates(self, tick, mu, cands_robot_ends, scores, selected, executed):
+        with self._lock:
+            self._last_scores = [float(s) for s in scores]
+            self._last_selected = int(selected)
+            self._rows.append({
+                "tick": int(tick),
+                "selected_id": int(selected),
+                "scores": [float(s) for s in scores],
+                "candidate_ends": [list(map(float, e)) for e in cands_robot_ends],
+                "mu_end": list(map(float, mu)),
+                "executed_action": list(map(float, executed)),
+                "sigma_scale": self.sigma_scale,
+                "n": self.n,
+            })
+
+    def observe(self, obs_frame):
+        """Run the judge on the current camera frame and fold episode labels."""
+        if not self.enabled:
+            return
+        try:
+            import numpy as np
+
+            from .saliency import _to_uint8_hwc
+
+            key = f"observation.images.{self.camera}"
+            img = obs_frame.get(key)
+            if img is None:
+                alt = next((k for k in obs_frame if k.lower() == key.lower()), None)
+                img = obs_frame.get(alt) if alt else None
+            if img is not None:
+                arr = _to_uint8_hwc(img) if hasattr(img, "detach") else np.asarray(img)
+                self._frame_hw = (arr.shape[0], arr.shape[1])
+                if self.target_box is not None:
+                    self._episode_success = self._judge.update(arr, self.target_box)
+        except Exception as exc:
+            logger.debug("BoN judge update failed: %s", exc)
+        self._fold_episode_label()
+
+    def _fold_episode_label(self):
+        ds = self._dataset()
+        if ds is None:
+            return
+        try:
+            num = int(ds.num_episodes)
+        except Exception:
+            return
+        if self._last_num_episodes is None:
+            self._last_num_episodes = num
+            return
+        if num > self._last_num_episodes:
+            # The episode that just closed is index num-1.
+            self._write_label(num - 1, self._episode_success)
+            stats = self._arm_stats[self._current_arm]
+            if self._episode_success:
+                self._success_count += 1
+                stats[0] += 1
+            else:
+                self._fail_count += 1
+                stats[1] += 1
+            self._episode_index = num
+            self._current_arm = self._arm_for_episode(num)
+            self._reset_judge()
+            self._last_num_episodes = num
+            self.flush_log()
+
+    def _write_label(self, episode_index: int, success: bool):
+        root = self._dataset_root()
+        if root is None:
+            return
+        path = root / _BON_LABELS_NAME
+        try:
+            labels = json.loads(path.read_text()) if path.exists() else {}
+            labels[str(episode_index)] = bool(success)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(labels, indent=2))
+        except OSError as exc:
+            logger.debug("BoN label write failed: %s", exc)
+        modes_path = root / "meta/lelab_episode_modes.json"
+        try:
+            modes = json.loads(modes_path.read_text()) if modes_path.exists() else {}
+            modes[str(episode_index)] = self._current_arm
+            modes_path.write_text(json.dumps(modes, indent=2))
+        except OSError as exc:
+            logger.debug("BoN mode write failed: %s", exc)
+
+    def flush_log(self):
+        with self._lock:
+            rows, self._rows = self._rows, []
+        if not rows:
+            return
+        root = self._dataset_root() or _PREVIEW_DIR
+        try:
+            import pyarrow as pa
+            import pyarrow.parquet as pq
+
+            path = root / _BON_LOG_NAME
+            table = pa.Table.from_pylist(rows)
+            if path.exists():
+                old = pq.read_table(path)
+                table = pa.concat_tables([old, table], promote_options="default")
+            pq.write_table(table, path, compression="snappy")
+        except Exception as exc:
+            logger.debug("BoN candidate log flush failed: %s", exc)
+
+    def start_watchers(self):
+        def watcher():
+            while True:
+                time.sleep(0.3)
+                try:
+                    if _BON_CONFIG_FILE.exists():
+                        cfg = json.loads(_BON_CONFIG_FILE.read_text())
+                        _BON_CONFIG_FILE.unlink(missing_ok=True)
+                        self.apply_hot_config(cfg)
+                except Exception as exc:
+                    logger.debug("BoN hot config failed: %s", exc)
+
+        def writer():
+            while True:
+                time.sleep(0.3)
+                self.flush_log()
+                state = {
+                    "enabled": self.enabled,
+                    "mode": self.mode,
+                    "n": self.n,
+                    "sigma_scale": self.sigma_scale,
+                    "k": self.k,
+                    "confirm_k": self.confirm_k,
+                    "verifier": self.verifier,
+                    "verifier_ok": self._verifier_ok,
+                    "verifier_r2": float(self._fit.get("mean_r2", 0.0)) if self._fit else None,
+                    "camera": self.camera,
+                    "target_box": list(self.target_box) if self.target_box else None,
+                    "last_scores": self._last_scores,
+                    "last_selected": self._last_selected,
+                    "judge_success": self._episode_success,
+                    "success_count": self._success_count,
+                    "fail_count": self._fail_count,
+                    "active_mode": self._current_arm,
+                    "episode_index": self._episode_index,
+                    "arm_stats": {k: list(v) for k, v in self._arm_stats.items()},
+                }
+                try:
+                    tmp = _PREVIEW_DIR / ".bon_state.tmp"
+                    tmp.write_text(json.dumps(state))
+                    tmp.replace(_BON_STATE_FILE)
+                except OSError:
+                    pass
+
+        _PREVIEW_DIR.mkdir(parents=True, exist_ok=True)
+        threading.Thread(target=watcher, name="lelab-bon-config", daemon=True).start()
+        threading.Thread(target=writer, name="lelab-bon-state", daemon=True).start()
+
+
+class BoNInferenceEngine:
+    """Wrap the sync engine: at each replan boundary sample N perturbed chunks,
+    score them with the aim verifier, execute the best one's first k steps.
+
+    Falls back to the inner engine (greedy) whenever BoN is disabled, the policy
+    has no chunk head, or the verifier is unavailable.
+    """
+
+    def __init__(self, inner, controller: BoNController, snapshot_buffer=None):
+        self._inner = inner
+        self._ctrl = controller
+        self._snapshot_buffer = snapshot_buffer
+        self._chunk = None
+        self._pos = 0
+        self._exec_horizon = 0
+        self._tick = 0
+        self._chunk_episode = -1
+
+    def _has_chunk_head(self):
+        policy = getattr(self._inner, "_policy", None)
+        return callable(getattr(policy, "predict_action_chunk", None))
+
+    def start(self): self._inner.start()
+    def stop(self): self._inner.stop()
+    def pause(self): self._inner.pause()
+    def resume(self): self._inner.resume()
+    def notify_observation(self, obs): self._inner.notify_observation(obs)
+
+    def reset(self):
+        self._chunk = None
+        self._pos = 0
+        self._inner.reset()
+
+    @property
+    def ready(self): return self._inner.ready
+    @property
+    def failed(self): return self._inner.failed
+
+    def _to_robot(self, action_norm):
+        import torch
+
+        inner = self._inner
+        a = inner._postprocessor(action_norm.unsqueeze(0).to(inner._device))
+        return a.squeeze(0).float().cpu()
+
+    def _replan(self, obs_frame):
+        import torch
+        from lerobot.policies import prepare_observation_for_inference
+
+        ctrl = self._ctrl
+        inner = self._inner
+        obs = prepare_observation_for_inference(
+            dict(obs_frame), inner._device, inner.task, inner._robot_type
+        )
+        obs = inner._preprocessor(obs)
+        with torch.inference_mode():
+            mu = inner._policy.predict_action_chunk(obs)
+        mu = mu.squeeze(0).float().cpu()
+        H, D = mu.shape
+        ctrl.update_sigma(mu)
+        sigma = torch.tensor(ctrl.sigma_vec(D), dtype=torch.float32)
+        noise = (torch.randn(ctrl.n, H, D) * sigma).clamp(-4 * sigma, 4 * sigma)
+        cands = mu.unsqueeze(0) + noise
+        for i in ctrl._gripper_idx:
+            if 0 <= i < D:
+                cands[:, :, i] = mu[:, i]
+        state = obs_frame.get("observation.state")
+        state_np = state.detach().cpu().numpy() if hasattr(state, "detach") else state
+        ends, scores = [], []
+        for i in range(ctrl.n):
+            end_robot = self._to_robot(cands[i, H - 1])
+            ends.append(end_robot.numpy())
+            scores.append(ctrl.score(end_robot.numpy(), state_np))
+        best = int(max(range(ctrl.n), key=lambda i: scores[i]))
+        selected = cands[best]
+        robot_chunk = torch.stack([self._to_robot(selected[t]) for t in range(H)])
+        self._chunk = robot_chunk
+        self._pos = 0
+        self._chunk_episode = ctrl._episode_index
+        self._exec_horizon = min(ctrl.k, H)
+        ctrl.log_candidates(self._tick, mu[H - 1].numpy(), ends, scores, best,
+                            robot_chunk[0].numpy())
+
+    def get_action(self, obs_frame):
+        ctrl = self._ctrl
+        if obs_frame is None:
+            return None
+        ctrl.observe(obs_frame)
+        if (
+            not ctrl.bon_active()
+            or not self._has_chunk_head()
+            or not ctrl._verifier_ok
+            or ctrl.target_box is None
+        ):
+            return self._inner.get_action(obs_frame)
+        if self._chunk_episode != ctrl._episode_index:
+            self._chunk = None
+            self._chunk_episode = ctrl._episode_index
+        if self._chunk is None or self._pos >= self._exec_horizon:
+            try:
+                self._replan(obs_frame)
+            except Exception as exc:
+                logger.warning("BoN replan failed, greedy fallback: %s", exc)
+                self._chunk = None
+                return self._inner.get_action(obs_frame)
+        if self._chunk is None:
+            return self._inner.get_action(obs_frame)
+        action = self._chunk[self._pos]
+        self._pos += 1
+        self._tick += 1
+        if self._snapshot_buffer is not None:
+            try:
+                import numpy as np
+
+                images = {k: v for k, v in obs_frame.items()
+                          if isinstance(v, np.ndarray) and v.ndim == 3 and v.shape[-1] == 3}
+                self._snapshot_buffer.add({
+                    "timestamp": time.time(), "images": images,
+                    "action": action.numpy(), "state": None,
+                })
+            except Exception:
+                pass
+        return action
 
 
 def _start_preview_publisher(ctx) -> None:
@@ -1113,18 +1557,34 @@ def main() -> None:
             )
         keys = list(ctx.data.ordered_action_keys)
         passthrough = [i for i, k in enumerate(keys) if "gripper" in k.lower()]
-        if alpha < 1.0:
+        bon_enabled = bool(opts.get("bon_enabled", 0))
+        # BoN selects whole chunks; inter-chunk EMA smoothing would blur the
+        # chosen candidate, so it is mutually exclusive with smoothing.
+        effective_alpha = 1.0 if bon_enabled else alpha
+        if effective_alpha < 1.0:
             ctx.policy.inference = SmoothingInferenceEngine(
-                ctx.policy.inference, alpha, passthrough, snapshot_buffer
+                ctx.policy.inference, effective_alpha, passthrough, snapshot_buffer
             )
             logger.info(
                 "LeForge chunk smoothing enabled (alpha=%.2f, passthrough channels=%s)",
-                alpha,
+                effective_alpha,
                 passthrough,
             )
         else:
             ctx.policy.inference = SmoothingInferenceEngine(
                 ctx.policy.inference, 1.0, passthrough, snapshot_buffer
+            )
+        if bon_enabled:
+            controller = BoNController(opts, ctx_holder)
+            controller._gripper_idx = passthrough
+            ctx.policy.inference = BoNInferenceEngine(
+                ctx.policy.inference, controller, snapshot_buffer
+            )
+            controller.start_watchers()
+            logger.info(
+                "LeForge BoN enabled (N=%d, sigma=%.2f, k=%d, verifier=%s, camera=%s)",
+                controller.n, controller.sigma_scale, controller.k,
+                controller.verifier, controller.camera,
             )
         _start_preview_publisher(ctx)
         return ctx

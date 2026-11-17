@@ -334,13 +334,17 @@ const JobsSection: React.FC = () => {
     try {
       const [next, hub] = await Promise.all([
         listJobs(baseUrl, fetchWithHeaders, LIMIT),
-        listHubJobs(baseUrl, fetchWithHeaders),
+        // Hub listing needs extra token scopes; a 403 there must not hide the
+        // local jobs (and the Deploy picker that feeds off them).
+        listHubJobs(baseUrl, fetchWithHeaders).catch(() => null),
       ]);
       jobsCache.set(baseUrl, next);
       setJobs(next);
-      setHubJobs(hub.jobs);
-      setHubModels(hub.models);
-      setHubAuthenticated(hub.authenticated);
+      if (hub) {
+        setHubJobs(hub.jobs);
+        setHubModels(hub.models);
+        setHubAuthenticated(hub.authenticated);
+      }
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));

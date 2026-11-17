@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NumberInput } from "@/components/ui/number-input";
+import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import {
   Dialog,
@@ -29,7 +30,7 @@ import {
   getCheckpointPolicyConfig,
   listJobCheckpoints,
 } from "@/lib/checkpointsApi";
-import { CaptureMode, startInference } from "@/lib/inferenceApi";
+import { CaptureMode, fitAimVerifier, startInference } from "@/lib/inferenceApi";
 import {
   RolloutDatasetInfo,
   RolloutRealWorld,
@@ -150,6 +151,20 @@ const InferenceModal: React.FC<Props> = ({
   const [captureDatasets, setCaptureDatasets] = useState<RolloutDatasetInfo[]>([]);
   const [captureDatasetsLoading, setCaptureDatasetsLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+
+  // Best-of-N flywheel: sample perturbed chunks at each replan, let the aim
+  // verifier pick, auto-judge episodes and keep failures for retraining.
+  const [bonEnabled, setBonEnabled] = useState(false);
+  const [bonN, setBonN] = useState(8);
+  const [bonSigma, setBonSigma] = useState(0.15);
+  const [bonK, setBonK] = useState(15);
+  const [bonConfirmK, setBonConfirmK] = useState(10);
+  const [bonCamera, setBonCamera] = useState("up");
+  const [bonColors, setBonColors] = useState("red");
+  const [bonAimRepo, setBonAimRepo] = useState("");
+  const [aimFit, setAimFit] = useState<Awaited<ReturnType<typeof fitAimVerifier>> | null>(null);
+  const [aimFitLoading, setAimFitLoading] = useState(false);
+  const [aimFitError, setAimFitError] = useState<string | null>(null);
 
   const [policyConfig, setPolicyConfig] = useState<PolicyConfigSummary | null>(null);
   const [policyConfigLoading, setPolicyConfigLoading] = useState(false);
@@ -325,6 +340,16 @@ const InferenceModal: React.FC<Props> = ({
   const expectedCameraNames = policyConfig
     ? Object.keys(policyConfig.image_features)
     : [];
+  useEffect(() => {
+    if (expectedCameraNames.length === 0) return;
+    setBonCamera((prev) =>
+      expectedCameraNames.includes(prev)
+        ? prev
+        : expectedCameraNames.includes("up")
+          ? "up"
+          : expectedCameraNames[0],
+    );
+  }, [policyConfig]);
   const allCamerasBound = expectedCameraNames.every(
     (name) => cameraBindings[name] != null,
   );
@@ -401,6 +426,16 @@ const InferenceModal: React.FC<Props> = ({
         num_episodes: nRuns,
         max_correction_s: maxCorrection,
         record_autonomous: recordAutonomous,
+        bon_enabled: bonEnabled,
+        bon_mode: "bon",
+        bon_n: bonN,
+        bon_sigma_scale: bonSigma,
+        bon_k: bonK,
+        bon_confirm_k: bonConfirmK,
+        bon_verifier: "aim",
+        bon_camera: bonCamera,
+        bon_colors: bonColors,
+        bon_aim_repo: bonAimRepo.trim(),
       });
       onOpenChange(false);
       navigate("/inference");
@@ -412,6 +447,26 @@ const InferenceModal: React.FC<Props> = ({
       });
       // Failure: bring the previews back so the user can adjust.
       setSubmitting(false);
+    }
+  };
+
+  const handleAimFit = async () => {
+    const repo = bonAimRepo.trim();
+    if (!repo) return;
+    setAimFitLoading(true);
+    setAimFitError(null);
+    try {
+      const res = await fitAimVerifier(baseUrl, fetchWithHeaders, {
+        repo_id: repo,
+        camera: bonCamera,
+        colors: bonColors.split(",").map((s) => s.trim()).filter(Boolean),
+      });
+      setAimFit(res);
+    } catch (e) {
+      setAimFit(null);
+      setAimFitError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setAimFitLoading(false);
     }
   };
 
@@ -776,6 +831,149 @@ const InferenceModal: React.FC<Props> = ({
                 />
               </div>
             </div>
+          </div>
+
+          <div className="space-y-4">
+            <h3 className="text-lg font-semibold text-slate-900 border-b border-sky-300 pb-2">
+              BoN 数据飞轮
+            </h3>
+            <div className="flex items-center justify-between gap-4">
+              <div className="space-y-1">
+                <Label className="text-sm font-medium text-slate-700">
+                  启用 Best-of-N（BoN）
+                </Label>
+                <p className="text-xs text-slate-500">
+                  每次重规划采样 N 个扰动动作块，verifier 选最优执行前 k
+                  步；自动判成并保留失败集用于回灌。与 RTC / Chunk
+                  平滑互斥；纯执行会自动改为全自动录制。
+                </p>
+              </div>
+              <Switch
+                checked={bonEnabled}
+                onCheckedChange={(v) => {
+                  setBonEnabled(v);
+                  if (v) {
+                    setSmoothStrength(0);
+                    setRtcGuidance(0);
+                  }
+                }}
+              />
+            </div>
+            {bonEnabled && (
+              <div className="space-y-3 rounded-lg border border-sky-200 bg-sky-50 p-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs text-slate-700">候选数 N</Label>
+                    <NumberInput
+                      min={1}
+                      max={32}
+                      value={bonN}
+                      onChange={(v) => v !== undefined && setBonN(v)}
+                      className="bg-white border-sky-200 text-slate-900"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs text-slate-700">执行步数 k</Label>
+                    <NumberInput
+                      min={1}
+                      max={100}
+                      value={bonK}
+                      onChange={(v) => v !== undefined && setBonK(v)}
+                      className="bg-white border-sky-200 text-slate-900"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs text-slate-700">
+                      扰动强度 σ×{bonSigma.toFixed(2)}
+                    </Label>
+                    <input
+                      type="range"
+                      min={0.05}
+                      max={0.5}
+                      step={0.05}
+                      value={bonSigma}
+                      onChange={(e) => setBonSigma(Number(e.target.value))}
+                      className="w-full accent-sky-500"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs text-slate-700">判成连续帧 K</Label>
+                    <NumberInput
+                      min={1}
+                      max={60}
+                      value={bonConfirmK}
+                      onChange={(v) => v !== undefined && setBonConfirmK(v)}
+                      className="bg-white border-sky-200 text-slate-900"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs text-slate-700">判成相机</Label>
+                    <Select value={bonCamera} onValueChange={setBonCamera}>
+                      <SelectTrigger className="bg-white border-sky-200 text-slate-900">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="bg-white border-sky-200 text-slate-900">
+                        {(expectedCameraNames.length > 0
+                          ? expectedCameraNames
+                          : ["up"]
+                        ).map((name) => (
+                          <SelectItem key={name} value={name}>
+                            {name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs text-slate-700">球颜色（逗号分隔）</Label>
+                    <Input
+                      value={bonColors}
+                      onChange={(e) => setBonColors(e.target.value)}
+                      className="bg-white border-sky-200 text-slate-900"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs text-slate-700">verifier 校准数据集</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      value={bonAimRepo}
+                      onChange={(e) => setBonAimRepo(e.target.value)}
+                      placeholder="训练用的 demo 数据集，如 user/pick_red"
+                      className="bg-white border-sky-200 text-slate-900"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleAimFit}
+                      disabled={aimFitLoading || !bonAimRepo.trim()}
+                      className="shrink-0 bg-white border-sky-200 text-slate-700 hover:bg-sky-50"
+                    >
+                      {aimFitLoading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                      拟合
+                    </Button>
+                  </div>
+                  {aimFitError && (
+                    <p className="text-xs text-red-600">{aimFitError}</p>
+                  )}
+                  {aimFit && (
+                    <p
+                      className={`text-xs ${aimFit.usable ? "text-green-600" : "text-amber-600"}`}
+                    >
+                      R²={aimFit.mean_r2.toFixed(2)} ·{" "}
+                      {aimFit.usable
+                        ? "verifier 可用"
+                        : "低于 0.5，BoN 会退回 greedy"}
+                    </p>
+                  )}
+                  <p className="text-xs text-slate-500">
+                    目标框在运行页的 {bonCamera} 画面上拖拽绘制；校准拟合一次后常驻复用。
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="space-y-4">

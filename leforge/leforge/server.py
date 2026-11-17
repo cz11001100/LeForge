@@ -71,6 +71,12 @@ from .record import (
 from .rollout import (
     InferenceRequest,
     TakeoverRequest,
+    handle_aim_fit,
+    handle_bon_candidates,
+    handle_bon_config,
+    handle_bon_labels,
+    handle_bon_retrain,
+    handle_bon_retrain_status,
     handle_inference_end_round,
     handle_inference_snapshot,
     handle_inference_status,
@@ -468,6 +474,70 @@ def inference_takeover(request: TakeoverRequest):
         raise HTTPException(
             status_code=result.get("status_code", 500),
             detail=result.get("message", "Takeover failed"),
+        )
+    return result
+
+
+@app.post("/bon-config")
+def bon_config(cfg: dict[str, Any]):
+    """Hot-update BoN params / target box in the running rollout subprocess."""
+    result = handle_bon_config(cfg)
+    if not result.get("success"):
+        raise HTTPException(
+            status_code=result.get("status_code", 500),
+            detail=result.get("message", "BoN config failed"),
+        )
+    return result
+
+
+@app.get("/bon-candidates")
+def bon_candidates(repo_id: str = "", limit: int = 20):
+    return handle_bon_candidates(repo_id, limit)
+
+
+@app.get("/bon-labels")
+def bon_labels(repo_id: str):
+    return handle_bon_labels(repo_id)
+
+
+class BonRetrainBody(BaseModel):
+    job_id: str
+    capture_repo: str
+    target_repo_id: str = ""
+
+
+@app.post("/bon-retrain")
+def bon_retrain(body: BonRetrainBody):
+    """Flywheel retrain: label the capture set, merge into the base set, resume."""
+    result = handle_bon_retrain(body.job_id, body.capture_repo, body.target_repo_id)
+    if not result.get("success"):
+        raise HTTPException(
+            status_code=result.get("status_code", 500),
+            detail=result.get("message", "Bon retrain failed"),
+        )
+    return result
+
+
+@app.get("/bon-retrain-status")
+def bon_retrain_status():
+    return handle_bon_retrain_status()
+
+
+class AimFitBody(BaseModel):
+    repo_id: str
+    camera: str = "up"
+    colors: list[str] = ["red"]
+    horizon: int = 25
+
+
+@app.post("/aim-fit")
+def aim_fit(body: AimFitBody):
+    """Fit + persist the aim verifier calibration from a demo dataset."""
+    result = handle_aim_fit(body.repo_id, body.camera, body.colors, body.horizon)
+    if not result.get("success"):
+        raise HTTPException(
+            status_code=result.get("status_code", 500),
+            detail=result.get("message", "Aim fit failed"),
         )
     return result
 

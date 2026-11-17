@@ -116,6 +116,73 @@ def aim_point(fit_result: dict, target, state, size_hw: tuple[int, int] | None =
     return round(px[0], 1), round(px[1], 1)
 
 
+# ---------------------------------------------------------------------------
+# Best-of-N verifier: persist the calibration and score candidate chunks.
+# ---------------------------------------------------------------------------
+
+CALIBRATION_RELPATH = "meta/aim_calibration.json"
+MIN_VERIFIER_R2 = 0.5
+
+
+def save_calibration(dataset_root: Path, fit_result: dict) -> Path:
+    """Persist a fit so every rollout of this checkpoint/dataset reuses it."""
+    import json
+
+    root = Path(dataset_root)
+    path = root / CALIBRATION_RELPATH
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = dict(fit_result)
+    payload["B"] = [[float(v) for v in row] for row in fit_result["B"]]
+    path.write_text(json.dumps(payload, indent=2))
+    return path
+
+
+def load_calibration(dataset_root: Path) -> dict | None:
+    import json
+
+    import numpy as np
+
+    path = Path(dataset_root) / CALIBRATION_RELPATH
+    if not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text())
+        payload["B"] = np.asarray(payload["B"], dtype=float)
+        return payload
+    except Exception as exc:
+        logger.warning("Could not load aim calibration %s: %s", path, exc)
+        return None
+
+
+def verifier_usable(fit_result: dict | None, min_r2: float = MIN_VERIFIER_R2) -> bool:
+    if not fit_result:
+        return False
+    return float(fit_result.get("mean_r2", 0.0)) >= min_r2
+
+
+def score_chunk(
+    fit_result: dict,
+    candidate_end_action,
+    state,
+    target_center_xy: tuple[float, float],
+    size_hw: tuple[int, int] | None = None,
+) -> float:
+    """Higher is better: negative distance from the predicted ball to the target.
+
+    The candidate's末端 joint target + current state are pushed through the same
+    forward map used at calibration, so the score lives in pixel space and is
+    comparable across candidates of one decision point.
+    """
+    import math
+
+    px = aim_point(fit_result, candidate_end_action, state, size_hw)
+    if px is None:
+        return float("-inf")
+    dx = px[0] - target_center_xy[0]
+    dy = px[1] - target_center_xy[1]
+    return -math.hypot(dx, dy)
+
+
 def _render(frame, ball, est_human, est_model, out_path: Path, title: str):
     import matplotlib
 
