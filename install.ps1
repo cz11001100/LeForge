@@ -38,6 +38,10 @@ param(
 $ErrorActionPreference = "Stop"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
+# 轻量档：与 Linux 的 `install.sh --lite` 对应。用环境变量而不是参数，是因为
+# `irm ... | iex` 这种一键命令没法传参（脚本前还有 BOM 时 param 块也不一定生效）。
+if ($env:LEFORGE_PROFILE -eq "lite") { $Cpu = $true }
+
 $GitRepo = "https://github.com/cz11001100/LeForge.git"
 $UvBin   = Join-Path $env:USERPROFILE ".local\bin"
 
