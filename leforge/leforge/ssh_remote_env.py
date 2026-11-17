@@ -1533,7 +1533,15 @@ def install_lerobot_remote_streaming(
             yield step_result(5, "torchcodec", "done", tc_logs, tc_logs[-1] if tc_logs else "ok")
 
         # ── Step 6: Install training deps ───────────────────────────────────
-        deps = ["accelerate", "trackio", "tensorboard"]
+        deps = [
+            "accelerate",
+            "trackio",
+            "tensorboard",
+            # lerobot 0.7.x pins this range; a stale transformers (e.g. 5.5)
+            # lacks transformers.vision_utils and makes lerobot.policies
+            # unimportable, which kills training and the verification step.
+            "transformers>=5.22.0,<5.23.0",
+        ]
         yield step_result(6, "Installing training deps...", "running", [])
         deps_cmd = (
             f"{workdir_prefix}{python} -m pip install"
@@ -1561,36 +1569,51 @@ def install_lerobot_remote_streaming(
         # ── Step 7: Verify ──────────────────────────────────────────────────
         yield step_result(7, "Verifying installation...", "running", [])
         verify_script = (
-            "import torch, json, shutil\n"
+            "import json, shutil\n"
             "r = {}\n"
-            "r['torch'] = torch.__version__\n"
-            "r['cuda'] = torch.cuda.is_available()\n"
-            "r['cuda_ver'] = torch.version.cuda\n"
-            "r['gpu'] = torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'N/A'\n"
-            "r['ffmpeg'] = shutil.which('ffmpeg') is not None\n"
+            "try:\n"
+            "    import torch\n"
+            "    r['torch'] = torch.__version__\n"
+            "    r['cuda'] = torch.cuda.is_available()\n"
+            "    r['cuda_ver'] = torch.version.cuda\n"
+            "    r['gpu'] = torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'N/A'\n"
+            "except BaseException as e:\n"
+            "    r['fatal'] = type(e).__name__ + ': ' + str(e)\n"
+            "try:\n"
+            "    r['ffmpeg'] = shutil.which('ffmpeg') is not None\n"
+            "except BaseException:\n"
+            "    r['ffmpeg'] = False\n"
             "try:\n"
             "    import lerobot; r['lerobot'] = getattr(lerobot, '__version__', 'ok')\n"
-            "except: r['lerobot'] = 'MISSING'\n"
+            "except BaseException:\n"
+            "    r['lerobot'] = 'MISSING'\n"
             "try:\n"
             "    import datasets, accelerate, torchcodec.decoders; r['training_extras'] = True\n"
-            "except: r['training_extras'] = False\n"
+            "except BaseException:\n"
+            "    r['training_extras'] = False\n"
             "ready, missing = [], []\n"
-            "from lerobot.policies.factory import get_policy_class\n"
-            "for t in ('act','diffusion','pi0','pi0_fast','pi05','smolvla','groot','tdmpc','vqbet','cosmos3_nano','cosmos3_edge','dm05','eo1','evo1','fastwam','fineart_vla','flux3','g05','lawam','lingbot_va','lingbot_vla_v2','longwam','molmoact2','multi_task_dit','vla_jepa','wall_oss_05','wall_x','xvla'):\n"
-            "    try:\n"
-            "        get_policy_class(t); ready.append(t)\n"
-            "    except Exception:\n"
-            "        missing.append(t)\n"
+            "POLICIES = ('act','diffusion','pi0','pi0_fast','pi05','smolvla','groot','tdmpc','vqbet','cosmos3_nano','cosmos3_edge','dm05','eo1','evo1','fastwam','fineart_vla','flux3','g05','lawam','lingbot_va','lingbot_vla_v2','longwam','molmoact2','multi_task_dit','vla_jepa','wall_oss_05','wall_x','xvla')\n"
+            "try:\n"
+            "    from lerobot.policies.factory import get_policy_class\n"
+            "    for t in POLICIES:\n"
+            "        try:\n"
+            "            get_policy_class(t); ready.append(t)\n"
+            "        except BaseException:\n"
+            "            missing.append(t)\n"
+            "except BaseException as e:\n"
+            "    missing = list(POLICIES)\n"
+            "    r['factory_error'] = type(e).__name__ + ': ' + str(e)\n"
             "try:\n"
             "    from lerobot.rewards.factory import get_reward_model_class\n"
             "    get_reward_model_class('reward_classifier'); ready.append('reward_classifier')\n"
-            "except Exception:\n"
+            "except BaseException:\n"
             "    missing.append('reward_classifier')\n"
             "r['policies_ready'] = ready\n"
             "r['policies_missing'] = missing\n"
             "try:\n"
             "    import accelerate; r['accelerate'] = accelerate.__version__\n"
-            "except: r['accelerate'] = 'MISSING'\n"
+            "except BaseException:\n"
+            "    r['accelerate'] = 'MISSING'\n"
             "print(json.dumps(r))\n"
         )
         _stdin, stdout, stderr = client.exec_command(f"{python} -", timeout=180)
@@ -1602,6 +1625,14 @@ def install_lerobot_remote_streaming(
         if verr:
             verify_logs.extend(verr.splitlines())
 
+        if not vout:
+            tail = (verr or "远端 Python 没有输出").strip().splitlines()[-6:]
+            yield step_result(
+                7, "Verification", "failed", verify_logs,
+                "验证脚本没有输出：远端 Python 无法运行验证代码",
+                hint="；".join(tail)[:400] or "重新点「检查环境」确认 remote_python 可用",
+            )
+            return
         try:
             vdata = json.loads(vout.splitlines()[-1])
             missing = vdata.get("policies_missing", []) or []
@@ -1613,6 +1644,17 @@ def install_lerobot_remote_streaming(
 
             problems: list[str] = []
             notes: list[str] = []
+            if vdata.get("fatal"):
+                problems.append(f"基础依赖导入失败：{vdata['fatal']}")
+            if vdata.get("factory_error"):
+                fe = str(vdata["factory_error"])
+                tf_hint = (
+                    "（transformers 版本过旧，lerobot 0.7 需要 >=5.22,<5.23；"
+                    "重跑本安装会自动补装）"
+                    if "vision_utils" in fe
+                    else ""
+                )
+                problems.append(f"策略工厂无法导入：{fe}{tf_hint}")
             if not vdata.get("cuda"):
                 if not driver_ok:
                     notes.append(
@@ -1646,7 +1688,8 @@ def install_lerobot_remote_streaming(
                 f"PyTorch {vdata.get('torch')}, CUDA {vdata.get('cuda_ver')}, "
                 f"GPU {vdata.get('gpu')}, lerobot {remote_lr}（本地 {target_version or '?'}）, "
                 f"FFmpeg {'ok' if vdata.get('ffmpeg') else 'MISSING'}, "
-                f"policies ready: {len(vdata.get('policies_ready', []))}/9"
+                f"policies ready: {len(vdata.get('policies_ready', []))}"
+                f"/{len(vdata.get('policies_ready', [])) + len(missing)}"
             )
             if notes:
                 summary += f" — {notes[0]}"
