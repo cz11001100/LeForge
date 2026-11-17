@@ -178,6 +178,7 @@ from .ssh_config import (
     test_ssh_connection,
 )
 from .ssh_remote_env import check_remote_environment as _check_remote_env
+from .ssh_remote_env import install_leforge_remote_streaming as _install_leforge_stream
 from .ssh_remote_env import install_lerobot_remote as _install_lerobot
 from .ssh_remote_env import install_lerobot_remote_streaming as _install_lerobot_stream
 from .ssh_remote_env import reward_model_status as _reward_model_status
@@ -1998,9 +1999,11 @@ def ssh_install_lerobot(body: SSHInstallBody):
     )
 
     def event_stream():
-        for update in _install_lerobot_stream(
-            body.config_id, body.extra, body.use_cn_mirror, body.policies or None
-        ):
+        # One-click LeForge install: clone the repo on the pod and run its
+        # install.sh, so the remote trains with this repository's patched
+        # lerobot (SDPA attention, transformers pin) instead of a separately
+        # pip-installed PyPI build.
+        for update in _install_leforge_stream(body.config_id, body.use_cn_mirror):
             # A step-level "done" means one step finished, not the whole task —
             # forwarding it would mark the task complete mid-install and the
             # banner would vanish with no feedback.

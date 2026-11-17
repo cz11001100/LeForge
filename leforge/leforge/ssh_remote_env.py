@@ -1737,3 +1737,138 @@ def install_lerobot_remote(config_id: str, extra: str = "") -> dict:
                 "lines": update["logs"],
             }
     return {"success": False, "message": "Installation interrupted", "lines": []}
+
+
+LEFORGE_INSTALL_STEPS = 6
+
+
+def install_leforge_remote_streaming(config_id: str, use_cn_mirror: bool = False):
+    """Run install-ssh-env.sh on the remote and stream its step markers.
+
+    The environment comes from this repository's install.sh (patched lerobot +
+    leforge), not from a separately pip-installed PyPI lerobot. The script is
+    uploaded over SFTP so the pod needs no GitHub access for the bootstrap
+    itself; it still clones the repo internally for install.sh.
+    """
+    import socket
+    from pathlib import Path
+
+    from .ssh_config import get_ssh_config, set_remote_python
+
+    def step_result(step, label, status, logs, message="", hint=""):
+        return {
+            "step": step,
+            "total_steps": LEFORGE_INSTALL_STEPS,
+            "label": label,
+            "status": status,
+            "logs": logs[-20:],
+            "message": message,
+            "hint": hint,
+        }
+
+    cfg = get_ssh_config(config_id)
+    if cfg is None:
+        yield step_result(0, "Init", "failed", [], "Config not found")
+        return
+
+    script_path = Path(__file__).resolve().parents[2] / "install-ssh-env.sh"
+    if not script_path.is_file():
+        yield step_result(0, "Init", "failed", [], f"找不到安装脚本：{script_path}")
+        return
+
+    try:
+        client = _connect(cfg)
+    except Exception as exc:
+        yield step_result(0, "连接远端", "failed", [], _explain_connect_error(exc))
+        return
+
+    try:
+        sftp = client.open_sftp()
+        with sftp.open("/tmp/leforge-install-ssh-env.sh", "w") as fh:
+            fh.write(script_path.read_text())
+        sftp.close()
+
+        args = " --cn" if use_cn_mirror else ""
+        _stdin, stdout, _stderr = client.exec_command(
+            f"bash /tmp/leforge-install-ssh-env.sh --full{args} 2>&1", timeout=3600
+        )
+        channel = stdout.channel
+        channel.settimeout(30)
+
+        deadline = time.time() + 3600
+        logs: list[str] = []
+        current = 0
+        final_py: str | None = None
+        all_ok = False
+        buf = ""
+        while True:
+            if time.time() > deadline:
+                yield step_result(current or 0, "超时", "failed", logs[-10:], "安装超过 60 分钟，已放弃")
+                return
+            try:
+                chunk = channel.recv(4096)
+            except socket.timeout:
+                continue
+            if not chunk:
+                break
+            buf += chunk.decode(errors="replace")
+            while "\n" in buf:
+                line, buf = buf.split("\n", 1)
+                line = line.rstrip("\r")
+                if line.startswith("[STEP ") and "]" in line:
+                    try:
+                        k = int(line[6 : line.index("/")])
+                        label = line[line.index("]") + 1 :].strip()
+                        current = k
+                        yield step_result(k, label, "running", logs[-10:])
+                    except ValueError:
+                        logs.append(line)
+                elif line.startswith("[OK ") and "]" in line:
+                    try:
+                        k = int(line[4 : line.index("]")])
+                        msg = line[line.index("]") + 1 :].strip()
+                        yield step_result(k, msg or f"step {k}", "done", logs[-6:], msg)
+                    except ValueError:
+                        logs.append(line)
+                elif line.startswith("[FAIL ") and "]" in line:
+                    try:
+                        k = int(line[6 : line.index("]")])
+                        msg = line[line.index("]") + 1 :].strip()
+                        yield step_result(k, "失败", "failed", logs[-10:] + [line], msg)
+                    except ValueError:
+                        yield step_result(current or 0, "失败", "failed", logs[-10:] + [line], line)
+                    return
+                elif line.startswith("LEFORGE_PY="):
+                    final_py = line.split("=", 1)[1].strip()
+                elif line.strip() == "[ALL-OK]":
+                    all_ok = True
+                else:
+                    logs.append(line)
+                    if len(logs) > 300:
+                        logs = logs[-300:]
+
+        if final_py:
+            try:
+                set_remote_python(cfg.id, final_py)
+            except Exception:
+                pass
+        if all_ok:
+            yield step_result(
+                LEFORGE_INSTALL_STEPS,
+                "验证通过",
+                "done",
+                logs[-8:],
+                f"训练环境就绪（{final_py or 'venv'}）",
+            )
+        else:
+            yield step_result(
+                current or 0,
+                "安装中断",
+                "failed",
+                logs[-10:],
+                "安装脚本提前退出（看上面的日志）",
+            )
+    except Exception as exc:
+        yield step_result(0, "安装中断", "failed", [str(exc)[:500]], _explain_connect_error(exc))
+    finally:
+        client.close()

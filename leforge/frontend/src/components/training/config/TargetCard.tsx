@@ -86,11 +86,11 @@ const sshCommandToName = (cmd: string): string => {
 
 const STEP_LABELS = [
   "检测 GPU",
-  "配置 pip",
-  "安装 PyTorch",
-  "安装 lerobot",
-  "安装依赖",
-  "验证",
+  "系统依赖",
+  "拉取仓库",
+  "一键安装",
+  "自检环境",
+  "验证策略",
 ];
 
 const INSTALLABLE_POLICIES: { v: string; label: string }[] = [
@@ -471,7 +471,7 @@ const TargetCard: React.FC<TargetCardProps> = ({
   return (
     <Card className="bg-sky-50/70 border-sky-300 rounded-xl">
       <CardHeader>
-        <CardTitle className="text-slate-900">算力目标 Compute target</CardTitle>
+        <CardTitle className="text-slate-900">算力目标 Compute Target</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
         <div>
