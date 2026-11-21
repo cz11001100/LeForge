@@ -16,7 +16,10 @@ import json
 import logging
 import os
 import platform
+import re
 import shutil
+import stat
+import subprocess
 import time
 from pathlib import Path
 from typing import Literal
@@ -177,6 +180,53 @@ def find_available_ports():
         # List /dev/tty* ports for Unix-based systems
         ports = [str(path) for path in Path("/dev").glob("tty*")]
     return sorted(ports)
+
+
+# `sudo chmod` takes a bare device path, so anything that is not one of the
+# serial node families is refused before a privileged command is ever built.
+_SERIAL_DEVICE_RE = re.compile(r"^/dev/(?:ttyACM|ttyUSB|ttyS)\d+$")
+
+
+def fix_serial_port_permission(port: str, password: str) -> dict:
+    """Open a serial device with `sudo chmod 666 <port>`.
+
+    A freshly plugged Feetech arm comes back owned root:dialout with mode 0660,
+    so calibration/teleoperation/recording all fail on permissions. The password
+    is piped to `sudo -S` for this one call: never logged, never stored, and the
+    device path is regex-validated and passed as a single argv element (no shell).
+    """
+    if platform.system() != "Linux":
+        return {"success": False, "message": "端口权限修复只在 Linux 上需要（sudo chmod）"}
+    if not _SERIAL_DEVICE_RE.match(port or ""):
+        return {"success": False, "message": f"不是可识别的串口设备路径：{port}"}
+    if not os.path.exists(port):
+        return {"success": False, "message": f"设备不存在：{port}"}
+    if not password:
+        return {"success": False, "message": "请输入 sudo 密码"}
+
+    try:
+        proc = subprocess.run(
+            ["sudo", "-S", "-p", "", "chmod", "666", port],
+            input=password,
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+    except subprocess.TimeoutExpired:
+        return {"success": False, "message": "sudo 超时（20 秒）"}
+
+    if proc.returncode != 0:
+        # sudo -S writes the prompt to stderr but never echoes the password back.
+        lines = (proc.stderr or proc.stdout or "").strip().splitlines()
+        reason = lines[-1] if lines else f"sudo 退出码 {proc.returncode}"
+        if "incorrect password" in reason.lower() or "try again" in reason.lower():
+            reason = "sudo 密码不正确"
+        logger.error("chmod on %s failed (exit %s)", port, proc.returncode)
+        return {"success": False, "message": f"修改权限失败：{reason}"}
+
+    mode = stat.S_IMODE(os.stat(port).st_mode)
+    logger.info("Port permission opened: %s now %04o", port, mode)
+    return {"success": True, "message": f"{port} 权限已设为 {mode:04o}", "mode": f"{mode:04o}"}
 
 
 def find_robot_port(robot_type="robot"):

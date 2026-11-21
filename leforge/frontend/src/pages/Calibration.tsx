@@ -82,10 +82,15 @@ const Calibration = () => {
   const { baseUrl, fetchWithHeaders } = useApi();
 
   const consoleRef = useRef<HTMLDivElement>(null);
-  const demoVideoRef = useRef<HTMLDivElement>(null);
 
   const [deviceType, setDeviceType] = useState<string>("teleop");
   const [port, setPort] = useState<string>("");
+  const [permissionPassword, setPermissionPassword] = useState<string>("");
+  const [permissionBusy, setPermissionBusy] = useState(false);
+  const [permissionResult, setPermissionResult] = useState<{
+    ok: boolean;
+    message: string;
+  } | null>(null);
   const [robot, setRobot] = useState<RobotRecord | null>(null);
   const [cameras, setCameras] = useState<CameraConfig[]>([]);
   // Off by default so merely opening the calibration page never grabs a camera.
@@ -358,18 +363,6 @@ const Calibration = () => {
   };
 
   useEffect(() => {
-    if (
-      calibrationStatus.status === "error" &&
-      calibrationStatus.error?.startsWith(DISCONTINUITY_ERROR_PREFIX)
-    ) {
-      demoVideoRef.current?.scrollIntoView({
-        behavior: "smooth",
-        block: "center",
-      });
-    }
-  }, [calibrationStatus.status, calibrationStatus.error]);
-
-  useEffect(() => {
     if (!isPolling) return;
     // Single stable interval. Reads calibration_active from the ref each tick so
     // the interval doesn't tear down/recreate on every status change.
@@ -443,6 +436,35 @@ const Calibration = () => {
     const robotType = deviceType === "robot" ? "follower" : "leader";
     setDetectionRobotType(robotType);
     setShowPortDetection(true);
+  };
+
+  // A re-plugged arm comes back root:dialout 0660, so every connect fails on
+  // permissions. Run the chmod here instead of making the user open a terminal;
+  // the password goes to this one request and is cleared either way.
+  const handleFixPortPermission = async () => {
+    if (!port || !permissionPassword || permissionBusy) return;
+    setPermissionBusy(true);
+    setPermissionResult(null);
+    try {
+      const res = await fetchWithHeaders(`${baseUrl}/fix-port-permission`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ port, password: permissionPassword }),
+      });
+      const data = await res.json();
+      setPermissionResult({
+        ok: !!data.success,
+        message: data.message || "Failed to change permissions.",
+      });
+    } catch {
+      setPermissionResult({
+        ok: false,
+        message: "Could not reach the backend server.",
+      });
+    } finally {
+      setPermissionPassword("");
+      setPermissionBusy(false);
+    }
   };
 
   // Write the port for the current side straight into the robot record, so a
@@ -557,7 +579,7 @@ const Calibration = () => {
           </Alert>
         )}
 
-        <div className="grid grid-cols-1 items-start lg:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <Card className="bg-sky-50/70 border-sky-300 backdrop-blur-sm">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-slate-800">
@@ -852,8 +874,7 @@ const Calibration = () => {
                       <div>
                         Make sure to start the calibration with the robot in a
                         middle position — all joints in the middle of their
-                        ranges. See the calibration demo below for the correct
-                        starting pose.
+                        ranges.
                       </div>
                     </AlertDescription>
                   </Alert>
@@ -866,38 +887,71 @@ const Calibration = () => {
                   </Alert>
                 ))}
 
-              <div
-                ref={demoVideoRef}
-                className="bg-sky-100/70 p-4 rounded-lg border border-sky-300"
-              >
-                <h4 className="font-semibold mb-3 text-slate-800">
-                  Calibration Demo:
+              <div className="bg-sky-100/70 p-4 rounded-lg border border-sky-300 space-y-3">
+                <h4 className="font-semibold text-slate-800 flex items-center gap-2">
+                  <ShieldQuestion className="w-4 h-4 text-blue-700" />
+                  端口权限 Port permission
                 </h4>
-                <div className="relative rounded-lg overflow-hidden bg-sky-50">
-                  <video
-                    className="w-full h-auto rounded-md"
-                    controls
-                    preload="auto"
-                    muted
-                  >
-                    <source
-                      src="https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/lerobot/calibrate_so101_2.mp4"
-                      type="video/mp4"
-                    />
-                    <p className="text-slate-600 text-sm text-center py-4">
-                      Your browser does not support the video tag.
-                      <br />
-                      <a
-                        href="https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/lerobot/calibrate_so101_2.mp4"
-                        className="text-blue-700 hover:text-blue-700 underline"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        Click here to view the calibration video
-                      </a>
-                    </p>
-                  </video>
+
+                <div className="flex items-center gap-2 text-sm">
+                  <code className="bg-sky-50 border border-sky-300 rounded-md px-2 py-1 text-slate-800">
+                    sudo chmod 666
+                  </code>
+                  <span className="font-mono text-slate-800 truncate">
+                    {port || "—"}
+                  </span>
                 </div>
+
+                <div className="space-y-2">
+                  <Label
+                    htmlFor="sudoPassword"
+                    className="text-sm font-medium text-slate-700"
+                  >
+                    sudo 密码
+                  </Label>
+                  <Input
+                    id="sudoPassword"
+                    type="password"
+                    value={permissionPassword}
+                    onChange={(e) => setPermissionPassword(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleFixPortPermission();
+                    }}
+                    autoComplete="off"
+                    className="bg-sky-200 border-sky-300 text-slate-900 rounded-md"
+                  />
+                </div>
+
+                <Button
+                  onClick={handleFixPortPermission}
+                  disabled={!port || !permissionPassword || permissionBusy}
+                  variant="secondary"
+                  className="w-full bg-sky-200 hover:bg-sky-300 text-slate-900 rounded-md"
+                >
+                  {permissionBusy ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Play className="w-4 h-4 mr-2" />
+                  )}
+                  执行 Run
+                </Button>
+
+                {permissionResult && (
+                  <Alert
+                    className={
+                      permissionResult.ok
+                        ? "bg-green-100 border-green-300 text-green-700"
+                        : "bg-red-100 border-red-300 text-red-700"
+                    }
+                  >
+                    {permissionResult.ok ? (
+                      <CheckCircle className="h-4 w-4" />
+                    ) : (
+                      <XCircle className="h-4 w-4" />
+                    )}
+                    <AlertDescription>{permissionResult.message}</AlertDescription>
+                  </Alert>
+                )}
               </div>
             </CardContent>
           </Card>

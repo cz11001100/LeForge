@@ -145,6 +145,7 @@ from .utils.config import (
     detect_port_after_disconnect,
     find_available_ports,
     find_robot_port,
+    fix_serial_port_permission,
     get_default_robot_port,
     get_robot_record,
     get_saved_robot_port,
@@ -2261,6 +2262,17 @@ def get_available_ports():
     except Exception as e:
         logger.error(f"Error getting available ports: {e}")
         return {"status": "error", "message": str(e)}
+
+
+class PortPermissionBody(BaseModel):
+    port: str
+    password: str
+
+
+@app.post("/fix-port-permission")
+def fix_port_permission(body: PortPermissionBody):
+    """Open a serial device (sudo chmod 666) so calibration/teleop/recording can connect"""
+    return fix_serial_port_permission(body.port, body.password)
 
 
 # Runs in a fresh Python — see _avfoundation_cameras_in_cv2_order for why.
