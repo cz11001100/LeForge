@@ -801,7 +801,7 @@ def dataset_io_import(body: DatasetImportRequest):
         return start_dataset_import(body)
     except RuntimeError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    except (ValueError, FileExistsError) as exc:
+    except (ValueError, FileExistsError, FileNotFoundError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
@@ -812,7 +812,7 @@ def dataset_io_export(body: DatasetExportRequest):
         return start_dataset_export(body)
     except RuntimeError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    except (ValueError, FileExistsError) as exc:
+    except (ValueError, FileExistsError, FileNotFoundError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 

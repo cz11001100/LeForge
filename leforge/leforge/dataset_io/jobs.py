@@ -111,6 +111,13 @@ def start_import(request: ImportRequest) -> dict[str, Any]:
     with _progress_lock:
         if _progress.get("active"):
             raise RuntimeError("已有转换/导出任务正在进行，请等待它结束")
+    # Validate before spawning the worker so bad requests fail synchronously
+    # (HTTP 400 / clear UI error) instead of surfacing later via SSE.
+    _check_direction(request.preset, "import")
+    source = Path(request.source_path).expanduser()
+    if not source.exists():
+        raise ValueError(f"源路径不存在：{source}")
+    safe_repo_id(request.target_repo_id)
     _begin("import", "检查源数据…")
 
     def run() -> None:
@@ -130,6 +137,12 @@ def start_export(request: ExportRequest) -> dict[str, Any]:
     with _progress_lock:
         if _progress.get("active"):
             raise RuntimeError("已有转换/导出任务正在进行，请等待它结束")
+    # Same idea as start_import: fail fast on an unknown preset or a missing
+    # local dataset instead of reporting it asynchronously.
+    _check_direction(request.preset, "export")
+    probe_root = dataset_dir(request.repo_id)
+    if not (probe_root / "meta" / "info.json").is_file():
+        raise ValueError(f"本地没有数据集 {request.repo_id}（{probe_root / 'meta' / 'info.json'} 不存在）")
     _begin("export", "读取数据集…")
 
     def run() -> None:

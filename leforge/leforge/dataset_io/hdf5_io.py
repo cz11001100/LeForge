@@ -104,6 +104,10 @@ def _is_vlen(dataset: Any) -> bool:
 
 
 def _looks_like_image_dataset(dataset: Any, name: str | None = None) -> bool:
+    h5py = _h5py()
+    # h5py groups (e.g. robomimic's obs/images/) have no dtype: never image leaves.
+    if not isinstance(dataset, h5py.Dataset):
+        return False
     if _is_vlen(dataset):
         return True
     if dataset.ndim == 4:
@@ -284,7 +288,7 @@ def inspect(path: str | Path, preset: str) -> dict[str, Any]:
                 obs = handle.get("obs")
                 if obs is not None:
                     for name, ds in obs.items():
-                        if _is_vlen(ds) or (ds.ndim == 4 and ds.shape[-1] in (1, 3, 4)):
+                        if _looks_like_image_dataset(ds, name):
                             lens.append(len(ds))
                 lengths.append(int(min(lens)))
             cameras = []
@@ -384,24 +388,22 @@ def _iter_robomimic(path: str | Path, mapping: Hdf5Mapping) -> Iterator[Episode]
             image_datasets: dict[str, Any] = {}
             if obs is not None:
                 if mapping.image_keys:
-                    missing = [k for k in mapping.image_keys if k not in obs]
+                    available = _collect_image_datasets(obs)
+                    missing = [k for k in mapping.image_keys if k not in available]
                     if missing:
-                        raise KeyError(f"图像字段不存在：{missing}")
-                    image_datasets = {v: obs[k] for k, v in mapping.image_keys.items()}
+                        raise KeyError(f"图像字段不存在：{missing}。可用字段：{sorted(available)[:20]}")
+                    image_datasets = {v: available[k] for k, v in mapping.image_keys.items()}
                 else:
-                    names = unique_names(
-                        [
-                            _camera_name(k)
-                            for k, ds in obs.items()
-                            if _looks_like_image_dataset(ds)
-                        ]
-                    )
-                    sources = [
-                        k
-                        for k, ds in obs.items()
-                        if _looks_like_image_dataset(ds)
-                    ]
-                    image_datasets = dict(zip(names, (obs[s] for s in sources), strict=False))
+                    direct = {k: ds for k, ds in obs.items() if _looks_like_image_dataset(ds, k)}
+                    if direct:
+                        names = unique_names([_camera_name(k) for k in direct])
+                        image_datasets = dict(zip(names, direct.values(), strict=False))
+                    else:
+                        # Packs that nest cameras under obs/<group>/… (e.g. obs/images/top):
+                        # collect recursively instead of silently dropping them.
+                        collected = _collect_image_datasets(obs)
+                        names = unique_names([_camera_name(Path(s).name) for s in collected])
+                        image_datasets = dict(zip(names, collected.values(), strict=False))
             length = _episode_length(state, action, image_datasets)
             images = {name: list(_iter_image_rows(ds))[:length] for name, ds in image_datasets.items()}
             task = mapping.task or _read_attr(f, "task") or p.stem

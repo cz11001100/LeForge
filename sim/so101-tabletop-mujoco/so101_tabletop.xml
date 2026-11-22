@@ -143,7 +143,7 @@
          center (35 deg depression); it sits 5.5 cm past the 80 cm table's right
          edge, i.e. on a tripod. -->
     <camera name="top" pos="0.333 -0.0555 0.45"
-            xyaxes="0 1 0 -0.9487 0 0.3162" fovy="55"/>
+            xyaxes="0 0.9842 -0.1769 -0.9961 0.0156 0.0867" fovy="44"/>
     <camera name="front" pos="0.533 -0.4555 0.20"
             xyaxes="0.7525 0.6585 0 -0.1218 0.1391 0.9829" fovy="55"/>
   </worldbody>
