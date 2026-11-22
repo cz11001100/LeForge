@@ -12,7 +12,7 @@
   <statistic center="0.35 0 0.1" extent="0.6"/>
 
   <visual>
-    <headlight diffuse="0.35 0.35 0.35" ambient="0.3 0.3 0.3" specular="0 0 0"/>
+    <headlight diffuse="0.2 0.2 0.2" ambient="0.1 0.1 0.1" specular="0 0 0"/>
     <global azimuth="160" elevation="-20" offwidth="1280" offheight="960"/>
   </visual>
 
@@ -22,7 +22,7 @@
 
   <asset>
     <texture type="skybox" builtin="gradient" rgb1="0.75 0.75 0.75" rgb2="0.45 0.45 0.45" width="512" height="3072"/>
-    <material name="table" rgba="0.92 0.92 0.90 1" specular="0.05" shininess="0.1"/>
+    <material name="table" rgba="0.6 0.6 0.6 1" specular="0.05" shininess="0.1"/>
     <!-- Painted wooden cubes: one light wood grain, tinted by each cube's material. -->
     <texture name="wood" type="cube" file="textures/wood.png"/>
     <material name="red_wood" texture="wood" rgba="0.95 0.15 0.12 1" specular="0.2" shininess="0.3"/>
@@ -145,6 +145,6 @@
     <camera name="top" pos="0.333 -0.0555 0.45"
             xyaxes="0 0.9842 -0.1769 -0.9961 0.0156 0.0867" fovy="44"/>
     <camera name="front" pos="0.533 -0.4555 0.20"
-            xyaxes="0.7525 0.6585 0 -0.1218 0.1391 0.9829" fovy="55"/>
+            quat="0.9001 0.3925 0.0756 0.1733" fovy="60"/>
   </worldbody>
 </mujoco>
