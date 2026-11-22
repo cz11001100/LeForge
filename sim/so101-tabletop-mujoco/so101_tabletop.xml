@@ -30,7 +30,7 @@
     <material name="blue_wood" texture="wood" rgba="0.15 0.35 0.95 1" specular="0.2" shininess="0.3"/>
     <material name="yellow_wood" texture="wood" rgba="1.0 0.85 0.12 1" specular="0.2" shininess="0.3"/>
     <material name="table_leg" rgba="0.30 0.25 0.20 1"/>
-    <material name="floor" rgba="0.38 0.37 0.36 1"/>
+    <material name="floor" rgba="0.62 0.61 0.60 1"/>
     <material name="wall" rgba="0.85 0.84 0.80 1" emission="0.5"/>
     <material name="box" rgba="0.22 0.60 0.33 1" specular="0.6" shininess="0.7" reflectance="0.05"/>
     <material name="plate" rgba="0.62 0.62 0.61 1" specular="0.6" shininess="0.6"/>
