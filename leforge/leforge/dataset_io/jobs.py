@@ -282,8 +282,16 @@ def run_import_sync(request: ImportRequest, progress: ProgressCb | None = None) 
             joint_names=request.joint_names,
         )
         episodes = hdf5_io.iter_episodes(source, request.preset, mapping)
-    else:
+    elif fmt["kind"] == "zarr":
         episodes = zarr_io.iter_episodes(
+            source,
+            mapping_state_key=request.state_key,
+            mapping_action_key=request.action_key,
+        )
+    else:  # lerobot_v2
+        from . import lerobot_v2_io
+
+        episodes = lerobot_v2_io.iter_episodes(
             source,
             mapping_state_key=request.state_key,
             mapping_action_key=request.action_key,

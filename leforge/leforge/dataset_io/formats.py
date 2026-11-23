@@ -52,6 +52,19 @@ FORMATS: list[dict[str, Any]] = [
         "output_hint": "输出 .zarr 目录",
         "defaults": {"fps": 10, "task": ""},
     },
+    {
+        "key": "lerobot_v2",
+        "label": "LeRobot v2 数据集",
+        "kind": "lerobot_v2",
+        "directions": ["import"],
+        "description": (
+            "LeRobot v2.0 / v2.1 数据集：meta/info.json + data/chunk-*/*.parquet + "
+            "videos/chunk-*/<相机>/episode_*.mp4，按字段映射导入为内部 v3。"
+        ),
+        "source_hint": "指向 v2 数据集根目录（含 meta/info.json，codebase_version=v2.x）",
+        "output_hint": "导入到本地 LeRobotDataset v3",
+        "defaults": {"fps": 30, "task": ""},
+    },
 ]
 
 _FORMAT_BY_KEY = {fmt["key"]: fmt for fmt in FORMATS}
@@ -70,8 +83,10 @@ def detect_format(path: str | Path) -> str | None:
     if not p.exists():
         raise FileNotFoundError(f"路径不存在：{p}")
 
-    from . import hdf5_io, zarr_io
+    from . import hdf5_io, lerobot_v2_io, zarr_io
 
+    if p.is_dir() and lerobot_v2_io.looks_like_lerobot_v2(p):
+        return "lerobot_v2"
     if zarr_io.looks_like_zarr(p):
         return "zarr_diffusion_policy"
     if p.is_dir():
@@ -114,6 +129,10 @@ def inspect_source(path: str | Path, preset: str | None = None) -> dict[str, Any
         from . import zarr_io
 
         summary = zarr_io.inspect(p)
+    elif fmt["kind"] == "lerobot_v2":
+        from . import lerobot_v2_io
+
+        summary = lerobot_v2_io.inspect(p)
     else:  # pragma: no cover - registry above is exhaustive
         raise ValueError(f"格式 {detected} 没有对应的读取器")
 
