@@ -687,10 +687,25 @@ def run_sim_eval(
         except Exception as exc:
             logger.error("Sim eval diagnosis failed: %s", exc, exc_info=True)
             diagnostics = {"error": str(exc)}
+        # Per-episode env metrics (collisions, joint-limit violations, success cycle steps).
+        collected: dict[str, list[float]] = {"collisions": [], "limit_violations": [], "cycle_steps": []}
+        for task in info.get("per_task") or []:
+            for row in (task.get("metrics") or {}).get("env_metrics") or []:
+                if not isinstance(row, dict):
+                    continue
+                for key in collected:
+                    value = row.get(key)
+                    if isinstance(value, (int, float)):
+                        collected[key].append(float(value))
+        env_metrics = {
+            key: (round(sum(values) / len(values), 2) if values else None) for key, values in collected.items()
+        }
+        overall = dict(info.get("overall") or {})
+        overall["env_metrics"] = env_metrics
         return {
             "success": True,
             "exit_code": 0,
-            "overall": info.get("overall", {}),
+            "overall": overall,
             "per_group": info.get("per_group", {}),
             "videos": videos,
             "diagnostics": diagnostics,

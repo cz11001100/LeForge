@@ -884,6 +884,11 @@ export interface SimEvalOverall {
   pc_success_ci95: [number, number];
   eval_s: number;
   video_paths: string[];
+  env_metrics?: {
+    collisions?: number | null;
+    limit_violations?: number | null;
+    cycle_steps?: number | null;
+  };
 }
 
 export interface SimEvalDiagnostics {

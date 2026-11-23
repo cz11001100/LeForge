@@ -701,6 +701,25 @@ const SimEvalCard: React.FC<{
               />
               <Metric label="用时" value={fmt(results?.eval_s ?? overall.eval_s, 0, "s")} />
             </div>
+            {overall.env_metrics && (
+              <div className="grid grid-cols-3 gap-3">
+                <Metric
+                  label="碰撞/集"
+                  value={fmt(overall.env_metrics.collisions, 1)}
+                  hint="夹爪与桌面/支架的 >1N 接触累计"
+                />
+                <Metric
+                  label="限位越界/集"
+                  value={fmt(overall.env_metrics.limit_violations, 1)}
+                  hint="关节进入限位 2° 内的次数累计"
+                />
+                <Metric
+                  label="成功步数/集"
+                  value={fmt(overall.env_metrics.cycle_steps, 0)}
+                  hint="成功回合的平均步数；无成功时为 0"
+                />
+              </div>
+            )}
             {(results?.videos ?? []).length > 0 && (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {(results?.videos ?? []).map((v) => (

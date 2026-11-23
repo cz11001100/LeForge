@@ -198,10 +198,14 @@ def convert_lerobot_dataset_to_cropped_lerobot_dataset(
     )
 
     # Update the metadata for every image key that will be cropped:
-    # (Here we simply set the shape to be the final resize_size.)
+    # LeRobot image features are stored HWC; keep that convention and refresh the video size.
     for key in crop_params_dict:
-        if key in new_dataset.meta.info.features:
-            new_dataset.meta.info.features[key]["shape"] = (3, *resize_size)
+        feature = new_dataset.meta.info.features.get(key)
+        if feature is not None:
+            feature["shape"] = (*resize_size, 3)
+            video = feature.get("info")
+            if isinstance(video, dict) and "video.height" in video:
+                video["video.height"], video["video.width"] = resize_size
 
     # TODO:  Directly modify the mp4 video + meta info features, instead of recreating a dataset
     prev_episode_index = 0
@@ -213,8 +217,8 @@ def convert_lerobot_dataset_to_cropped_lerobot_dataset(
         for key, value in frame.items():
             if key in ("task_index", "timestamp", "episode_index", "frame_index", "index", "task"):
                 continue
-            if key in (DONE, REWARD):
-                # if not isinstance(value, str) and len(value.shape) == 0:
+            if isinstance(value, torch.Tensor) and value.dim() == 0:
+                # Reward/done/success flags may arrive as scalars; the writer expects shape (1,).
                 value = value.unsqueeze(0)
 
             if key in crop_params_dict:
@@ -223,6 +227,8 @@ def convert_lerobot_dataset_to_cropped_lerobot_dataset(
                 cropped = F.crop(value, top, left, height, width)
                 value = F.resize(cropped, resize_size)
                 value = value.clamp(0, 1)
+                if value.ndim == 3 and value.shape[0] == 3:
+                    value = value.permute(1, 2, 0)  # the writer stores image features as HWC
             if key.startswith("complementary_info") and isinstance(value, torch.Tensor) and value.dim() == 0:
                 value = value.unsqueeze(0)
             new_frame[key] = value
@@ -235,8 +241,9 @@ def convert_lerobot_dataset_to_cropped_lerobot_dataset(
             new_dataset.save_episode()
             prev_episode_index = frame["episode_index"].item()
 
-    # Save the last episode
+    # Save the last episode and flush the metadata (episodes index, stats).
     new_dataset.save_episode()
+    new_dataset.finalize()
 
     if push_to_hub:
         new_dataset.push_to_hub()
