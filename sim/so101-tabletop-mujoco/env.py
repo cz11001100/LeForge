@@ -26,6 +26,7 @@ center rises 5 cm above its reset height, the episode terminates on success and 
 """
 
 import copy
+import json
 import xml.etree.ElementTree as ET  # nosec B405
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -125,6 +126,26 @@ def build_model(scene: Path, root: Path) -> mujoco.MjModel:
     return spec.compile()
 
 
+LAYOUT_FILE = "layout.json"
+
+
+def load_layout(scene: Path | None) -> dict[str, Any]:
+    """Read the per-scene ``layout.json`` (cameras, ball size, HOME, joint offsets, workspace).
+
+    Keeping the real-world numbers in JSON means a changed room only needs a re-calibration
+    (see ``calibrate_layout.py``) instead of editing this module or the MJCF. Missing file
+    falls back to the constants and XML in this directory.
+    """
+    if scene is None:
+        return {}
+    path = Path(scene).parent / LAYOUT_FILE
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
 @dataclass
 class _BodyNoise:
     """Seeded offsets around one body's XML pose: free bodies move through qpos, static ones directly."""
@@ -156,7 +177,11 @@ class _World:
         randomize: Mapping,
         camera_fovy: Mapping[str, float],
     ):
+        self.layout = load_layout(scene)
         self.model = build_model(scene, root)
+        # Layout values default to the MJCF/constants until _apply_layout runs below.
+        self.joint_offsets = np.zeros(len(JOINTS))
+        self.ball_radius = BALL_RADIUS
         # The control period must be a whole number of physics steps.
         self.substeps = max(1, round(1 / (fps * self.model.opt.timestep)))
         self.model.opt.timestep = 1 / (fps * self.substeps)
@@ -167,6 +192,7 @@ class _World:
             name: self._id(mujoco.mjtObj.mjOBJ_BODY, name, "the task") for name in BALL_BODIES
         }
         self.actuators = np.array([self.model.actuator(name).id for name in JOINTS])
+        self._apply_layout()
         self.lo, self.hi = self.model.actuator_ctrlrange[self.actuators].T.copy()
         text = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_TEXT, INSTRUCTION_TEXT)
         self.instruction = ""
@@ -233,6 +259,47 @@ class _World:
             for body in range(1, self.model.nbody)
             if self._free_qadr(body) is not None and body not in randomized
         ]
+
+    def _apply_layout(self) -> None:
+        """Apply layout.json on top of the compiled model (cameras, balls, limits, offsets)."""
+        layout = self.layout or {}
+        model = self.model
+        offsets = (layout.get("arm") or {}).get("joint_offsets_deg") or (0.0,) * len(JOINTS)
+        self.joint_offsets = np.asarray(offsets, dtype=np.float64)[: len(JOINTS)]
+        if self.joint_offsets.shape != (len(JOINTS),):
+            raise ValueError(f"layout arm.joint_offsets_deg needs {len(JOINTS)} values, got {offsets}")
+        balls = layout.get("balls") or {}
+        if "radius_cm" in balls:
+            self.ball_radius = float(balls["radius_cm"]) / 100.0
+        for name, cfg in (layout.get("cameras") or {}).items():
+            camera = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_CAMERA, name)
+            if camera < 0:
+                continue
+            if "pos" in cfg:
+                model.cam_pos[camera] = cfg["pos"]
+            if "quat" in cfg:
+                model.cam_quat[camera] = cfg["quat"]
+            if "fovy" in cfg:
+                model.cam_fovy[camera] = float(cfg["fovy"])
+        if balls:
+            mass = float(balls.get("mass_kg") or 0.0)
+            for body in self.ball_bodies.values():
+                for geom in np.flatnonzero(model.geom_bodyid == body):
+                    model.geom_size[geom, 0] = self.ball_radius
+                if mass > 0:
+                    model.body_mass[body] = mass
+                qadr = self._free_qadr(body)
+                if qadr is not None:
+                    model.qpos0[qadr + 2] = self.ball_radius
+        for joint, (low, high) in ((layout.get("arm") or {}).get("limits_deg") or {}).items():
+            if joint not in JOINTS[:5]:
+                continue  # the gripper is 0-100, not radians; its range stays in the MJCF
+            jid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, joint)
+            aid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, joint)
+            if jid >= 0:
+                model.jnt_range[jid] = np.radians([low, high])
+            if aid >= 0:
+                model.actuator_ctrlrange[aid] = np.radians([low, high])
 
     def _id(self, kind: mujoco.mjtObj, name: str, section: str) -> int:
         index = mujoco.mj_name2id(self.model, kind, name)
@@ -313,7 +380,7 @@ class _World:
                 ):
                     continue
 
-                self.data.qpos[qadr : qadr + 3] = [x_mj, y_mj, BALL_RADIUS]
+                self.data.qpos[qadr : qadr + 3] = [x_mj, y_mj, self.ball_radius]
                 self.data.qpos[qadr + 3 : qadr + 7] = [1.0, 0.0, 0.0, 0.0]
                 placed.append((x_mj, y_mj))
                 break
@@ -365,15 +432,19 @@ class _World:
             mujoco.mju_mulQuat(self.model.body_quat[noise.body], turn, self.body_quat0[noise.body])
 
     def to_ctrl(self, values: np.ndarray) -> np.ndarray:
-        """Convert degrees and the 0-100 gripper opening to actuator radians."""
-        ctrl = np.deg2rad(values.astype(np.float64))
+        """Convert real-robot degrees (plus layout joint offsets) and the 0-100 gripper to radians."""
+        values = np.asarray(values, dtype=np.float64)
+        shifted = values.copy()
+        shifted[:5] = shifted[:5] + self.joint_offsets[:5]
+        ctrl = np.deg2rad(shifted)
         ctrl[5] = self.lo[5] + values[5] / 100 * (self.hi[5] - self.lo[5])
         return np.clip(ctrl, self.lo, self.hi)
 
     def joint_state(self) -> np.ndarray:
-        """Joint positions in the units of ``to_ctrl``."""
+        """Joint positions in the real-robot units of ``to_ctrl`` (offsets removed)."""
         q = self.data.qpos[self.qadr]
         state = np.rad2deg(q)
+        state[:5] = state[:5] - self.joint_offsets[:5]
         state[5] = (q[5] - self.lo[5]) / (self.hi[5] - self.lo[5]) * 100
         return state.astype(np.float32)
 
@@ -459,7 +530,7 @@ class SO101Env(gym.Env):
         observation_width: int = 640,
         cameras: Mapping[str, str] | None = None,
         instruction: str | None = None,
-        initial_joints: Sequence[float] = HOME,
+        initial_joints: Sequence[float] | None = None,
         randomize: Mapping[str, Any] | None = None,
         camera_fovy: Mapping[str, float] | None = None,
         action_smooth: float = 0.0,
@@ -467,6 +538,8 @@ class SO101Env(gym.Env):
         super().__init__()
         # None: the repository's tabletop scene, located on first use.
         self.scene = Path(scene) if scene is not None else None
+        # Real-world numbers live next to the MJCF so a changed room only needs a new JSON.
+        self.layout = load_layout(self.scene or (repo_root() / SCENE_FILE))
         self.task = "so101_tabletop"
         self.fps = fps
         self._max_episode_steps = episode_length
@@ -475,12 +548,25 @@ class SO101Env(gym.Env):
         self.width = observation_width
         # Observation key -> MJCF camera name.
         self.cameras = dict(cameras or {"up": "top", "side": "front", "wrist": "wrist_cam"})
-        self.instruction = instruction
+        self.instruction = instruction or (self.layout.get("task") or {}).get("instruction")
+        if initial_joints is None:
+            initial_joints = (self.layout.get("arm") or {}).get("home_deg", HOME)
         self.initial_joints = np.asarray(initial_joints, dtype=np.float32)
         if self.initial_joints.shape != (len(JOINTS),):
             raise ValueError(f"initial_joints needs one value per joint {JOINTS}")
+        base_randomize = copy.deepcopy(DEFAULTS["randomize"])
+        balls = self.layout.get("balls") or {}
+        if balls.get("workspace_user_cm"):
+            base_randomize["ball_workspace"] = balls["workspace_user_cm"]
+        if balls.get("keepouts"):
+            base_randomize["ball_keepouts"] = balls["keepouts"]
+        if "spacing_m" in balls:
+            base_randomize["ball_spacing"] = balls["spacing_m"]
+        base_randomize.update(self.layout.get("randomize") or {})
         if randomize is None:
-            randomize = copy.deepcopy(DEFAULTS["randomize"])
+            randomize = base_randomize
+        else:
+            randomize = {**base_randomize, **randomize}
         self.randomize = dict(randomize)
         # MJCF camera name -> vertical field of view in degrees, e.g. to widen the arm's wrist_cam.
         self.camera_fovy = dict(camera_fovy or {})
@@ -656,10 +742,18 @@ DEFAULTS: dict[str, Any] = {
 
 def make_env(n_envs: int = 1, use_async_envs: bool = False, **kwargs: Any) -> dict[str, dict[int, Any]]:
     """EnvHub entry point: ``{"so101_tabletop": {0: vector_env}}``; ``kwargs`` override ``SO101Env``'s."""
+    layout = load_layout(Path(kwargs["scene"]) if kwargs.get("scene") else HERE / SCENE_FILE)
+    balls = layout.get("balls") or {}
+    scene_randomize = dict(layout.get("randomize") or {})
+    if balls.get("workspace_user_cm"):
+        scene_randomize["ball_workspace"] = balls["workspace_user_cm"]
+    if balls.get("keepouts"):
+        scene_randomize["ball_keepouts"] = balls["keepouts"]
+    if "spacing_m" in balls:
+        scene_randomize["ball_spacing"] = balls["spacing_m"]
     merged = {**DEFAULTS, **kwargs}
-    if kwargs.get("randomize"):
-        # Scene variants override only the keys they care about.
-        merged["randomize"] = {**DEFAULTS["randomize"], **kwargs["randomize"]}
+    # Scene layout first, the per-job overrides last.
+    merged["randomize"] = {**DEFAULTS["randomize"], **scene_randomize, **(kwargs.get("randomize") or {})}
     factory = partial(SO101Env, **merged)
     vector_cls = gym.vector.AsyncVectorEnv if use_async_envs else gym.vector.SyncVectorEnv
     return {"so101_tabletop": {0: vector_cls([factory] * n_envs)}}

@@ -1,0 +1,74 @@
+{
+  "version": 1,
+  "source": {
+    "dataset": "zgx0920/common_1115_1",
+    "revision": "4e583c0098ed9b71ff665097b553a2ef6807e21b",
+    "episode": 0,
+    "updated": "2026-11-23",
+    "note": "ACT3 scene layout. Real furniture will change; re-run calibrate_layout.py after moving cameras/plate/balls."
+  },
+  "coordinate_frame": {
+    "description": "User frame: x=0 at the base right edge, y=0 at the base front edge, +x right, +y forward, z up.",
+    "mj_transform": "X_mj = y_user + 0.083; Y_mj = -x_user - 0.0555"
+  },
+  "plate": {
+    "center_user_cm": [20.0, 25.0],
+    "size_cm": [10.0, 10.0],
+    "top_z_m": 0.0075
+  },
+  "balls": {
+    "radius_cm": 2.6,
+    "mass_kg": 0.03,
+    "spacing_m": 0.06,
+    "workspace_user_cm": {"x": [-12.0, 6.0], "y": [20.0, 34.0]},
+    "keepouts": [
+      {"x": [15.0, 25.0], "y": [20.0, 30.0], "margin": 2.0},
+      {"x": [-6.0, 6.0], "y": [39.0, 51.0], "margin": 1.0}
+    ]
+  },
+  "arm": {
+    "home_deg": [-4.66, -102.73, 91.82, 72.48, -2.68, 36.22],
+    "joint_offsets_deg": [-2.1, -7.5, -13.9, 0.5, 1.5, 0.0],
+    "limits_deg": {
+      "shoulder_pan": [-110.0, 110.0],
+      "shoulder_lift": [-110.0, 110.0],
+      "elbow_flex": [-96.8, 96.8],
+      "wrist_flex": [-110.0, 110.0],
+      "wrist_roll": [-157.2, 162.8],
+      "gripper": [-10.0, 100.0]
+    }
+  },
+  "cameras": {
+    "top": {
+      "pos": [0.333, -0.0555, 0.45],
+      "quat": [0.72579, 0.12667, 0.00472, 0.67614],
+      "fovy": 68.4
+    },
+    "front": {
+      "pos": [0.533, -0.4555, 0.2],
+      "quat": [0.76236, 0.54384, 0.08449, 0.34045],
+      "fovy": 39.9
+    },
+    "wrist_cam": {
+      "pos": [0.1213, 0.1128, 0.0448],
+      "quat": [0.96118, -0.26766, -0.00033, -0.06698],
+      "fovy": 45.7
+    }
+  },
+  "calibration": {
+    "anchors": {
+      "plate_corners_px": {
+        "up": [[28, 278], [122, 282], [125, 371], [31, 376]],
+        "side": [[180, 240], [40, 320], [150, 468], [290, 360]]
+      },
+      "plate_corner_order": {
+        "up": [2, 3, 0, 1],
+        "side": [3, 2, 1, 0]
+      },
+      "module_px_up": {"0": [290, 167], "204": [302, 347]}
+    },
+    "residual_px": 7.4,
+    "status": "approximate; up/side/wrist disagree by ~10 cm on the balls"
+  },
+  "task": {"instruction": "grasp the red ball"}
+}

@@ -53,11 +53,32 @@ envs = HubEnvConfig(hub_path="lerobot/so101-tabletop-mujoco", trust_remote_code=
 
 `make_env_kwargs` (`--env.make_env_kwargs` on the command line) override the defaults of `SO101Env` in `env.py` (episode length, image size, cameras, initial joints, reset randomization). Headless machines need `MUJOCO_GL=egl`.
 
+## Layout (`layout.json`)
+
+The real tabletop will move. Keep the measured numbers in `layout.json` next to the MJCF instead of
+editing code: plate, ball size, arm HOME, joint zero offsets, joint limits, camera poses/fov, ball
+workspace and the image anchors used for calibration. `env.py` applies the file at build time; a
+missing file keeps the XML and the constants in `env.py`.
+
+After moving cameras, plate or balls, update the plate corners and camera positions in the file and
+re-run the calibration on one episode:
+
+```bash
+python calibrate_layout.py --dataset /path/to/lerobot_v3_dataset --episode 0
+```
+
+It fits the three camera poses and the five arm joint offsets, then rewrites `layout.json`.
+The ACT3 layout (dataset `zgx0920/common_1115_1`) is the current baseline; residual is ~7 px and the
+up/side/wrist views still disagree on the balls by ~10 cm, so treat the absolute meters as
+approximate until a checkerboard recording or the rig's URDF/calibration is available.
+
 ## Files
 
 | File | Content |
 |---|---|
 | `env.py` | the EnvHub entry point (`make_env`), the Gymnasium env and `LEROBOT_SIM` |
+| `layout.json` | per-scene real-world numbers: cameras, plate, balls, arm HOME/offsets/limits, workspace |
+| `calibrate_layout.py` | refits `layout.json` from one LeRobot v3 episode (plate + ball anchors) |
 | `so101_tabletop.xml` | the scene: room, table, cubes, box, lights, front camera and the arm's mount site |
 | `robotstudio_so101/` | MuJoCo Menagerie's SO-101 model, attached at the mount site (`env.py` recolors its printed parts) |
 | `textures/wood.png` | a seamless wood grain, tinted per cube |
