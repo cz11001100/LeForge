@@ -991,6 +991,7 @@ class TaskMetrics(TypedDict):
     successes: list[bool]
     video_paths: list[str]
     predicted_video_paths: list[str]
+    env_metrics: list[dict[str, float]]
 
 
 ACC_KEYS = ("sum_rewards", "max_rewards", "successes", "video_paths", "predicted_video_paths")
@@ -1045,6 +1046,7 @@ def eval_one(
         successes=[ep["success"] for ep in per_episode],
         video_paths=task_result.get("video_paths", []),
         predicted_video_paths=task_result.get("predicted_video_paths", []),
+        env_metrics=[dict(ep.get("metrics") or {}) for ep in per_episode],
     )
 
 
@@ -1113,6 +1115,13 @@ def run_one(
 
 def _task_info(task_group: str, task_id: int, metrics: dict) -> dict:
     """One `per_task` entry: the raw per-episode metrics plus the task's success count and interval."""
+    env_metrics = metrics.get("env_metrics") or []
+    if env_metrics:
+        names = sorted({name for m in env_metrics for name in m})
+        metrics["env_metrics_mean"] = {
+            name: float(np.nanmean([float(m.get(name, np.nan)) for m in env_metrics]))
+            for name in names
+        }
     return {
         "task_group": task_group,
         "task_id": task_id,

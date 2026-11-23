@@ -50,6 +50,11 @@ INSTRUCTION_TEXT = "instruction"
 ARM_COLOR = (0.90, 0.90, 0.88)
 
 JOINTS = ("shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll", "gripper")
+# Robot bodies that a collision metric should count (anything but the balls).
+ROBOT_BODIES = (
+    "base", "shoulder", "upper_arm", "lower_arm", "wrist", "gripper",
+    "moving_jaw_so101_v1", "camera_mount",
+)
 # Median first-frame joint pose of CZ11001100/1021_8 (degrees, gripper 0-100).
 HOME = (-1.98, -103.43, 91.21, 71.16, -0.97, 37.55)
 JOINT_NAMES = [f"{joint}.pos" for joint in JOINTS]
@@ -436,6 +441,40 @@ class SO101Env(gym.Env):
         key = camera or next(iter(self.cameras))
         return self._ensure_world().render(self.cameras.get(key, key))
 
+    def _update_metrics(self, world: _World) -> None:
+        """Accumulate collision and joint-limit diagnostics for the eval report."""
+        model, data = world.model, world.data
+        if getattr(self, "_metric_cache", None) is None:
+            robot_bodies = {mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, n) for n in ROBOT_BODIES}
+            ball_bodies = set(world.ball_bodies.values())
+            self._robot_geoms = {g for g in range(model.ngeom) if model.geom_bodyid[g] in robot_bodies}
+            self._ball_geoms = {g for g in range(model.ngeom) if model.geom_bodyid[g] in ball_bodies}
+            self._joint_limits = []
+            for jname in JOINTS[:5]:
+                jid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, jname)
+                if jid >= 0 and model.jnt_limited[jid]:
+                    self._joint_limits.append(
+                        (int(model.jnt_qposadr[jid]), float(model.jnt_range[jid][0]), float(model.jnt_range[jid][1]))
+                    )
+            self._metric_cache = True
+        force = np.zeros(6, dtype=np.float64)
+        for ci in range(data.ncon):
+            con = data.contact[ci]
+            g1, g2 = int(con.geom1), int(con.geom2)
+            hit1, hit2 = g1 in self._robot_geoms, g2 in self._robot_geoms
+            if not (hit1 or hit2):
+                continue
+            other = g2 if hit1 else g1
+            if other in self._ball_geoms:
+                continue  # contacting the balls is the task, not a collision
+            mujoco.mj_contactForce(model, data, ci, force)
+            if abs(float(force[0])) > 1.0:
+                self._collisions += 1
+        for adr, lo, hi in self._joint_limits:
+            q = float(data.qpos[adr])
+            if q - lo < np.radians(2.0) or hi - q < np.radians(2.0):
+                self._limit_violations += 1
+
     def _obs(self, world: _World) -> dict[str, Any]:
         return {
             "agent_pos": world.joint_state(),
@@ -455,6 +494,8 @@ class SO101Env(gym.Env):
         self._target_ball = TARGET_BALLS[task]
         self._ball_z0 = world.ball_height(self._target_ball)
         self._steps = 0
+        self._collisions = 0
+        self._limit_violations = 0
         ball_positions_cm = {}
         for name, body in world.ball_bodies.items():
             x_mj, y_mj = world.data.xpos[body][:2]
@@ -482,10 +523,20 @@ class SO101Env(gym.Env):
         world.data.ctrl[world.actuators] = world.to_ctrl(action)
         mujoco.mj_step(world.model, world.data, nstep=world.substeps)
         self._steps += 1
+        self._update_metrics(world)
         lift = world.ball_height(self._target_ball) - self._ball_z0
         success = lift >= LIFT_SUCCESS
         truncated = self._steps >= self._max_episode_steps and not success
-        info = {"is_success": success, "lift": lift, "target_ball": self._target_ball}
+        info = {
+            "is_success": success,
+            "lift": lift,
+            "target_ball": self._target_ball,
+            "metrics": {
+                "collisions": float(self._collisions),
+                "limit_violations": float(self._limit_violations),
+                "cycle_steps": float(self._steps if success else 0.0),
+            },
+        }
         return self._obs(world), 1.0 if success else 0.0, success, truncated, info
 
     def close(self) -> None:
