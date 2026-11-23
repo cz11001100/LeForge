@@ -215,7 +215,7 @@ def main() -> None:
 
     # plate world corners from the layout
     center = layout["plate"]["center_user_cm"]
-    half = 0.5 * layout["plate"]["size_cm"]
+    half = 0.5 * np.asarray(layout["plate"]["size_cm"], dtype=float)
     y_user, x_user = center[1] / 100 + 0.083, -center[0] / 100 - 0.0555
     plate = np.array([
         [y_user + half[1] / 100, x_user + half[0] / 100, layout["plate"].get("top_z_m", 0.0075)],
@@ -300,7 +300,16 @@ def main() -> None:
         out += list(0.35 * offsets)
         return np.array(out)
 
-    x0 = np.r_[wrist_pos, np.zeros(3), 0.0, np.array([0.35, 0.05]), np.array([0.30, -0.05]),
+    def backproject(position, rotation, fovy, uv, z):
+        f = (height / 2) / np.tan(np.radians(fovy) / 2)
+        ray = rotation @ np.array([uv[0] - width / 2, height / 2 - uv[1], -f])
+        ray = ray / np.linalg.norm(ray)
+        return position + ((z - position[2]) / ray[2]) * ray
+
+    red_world = backproject(top_position, top_rotation, top_fovy, ball_pixels["up"]["red"][:2], ball_radius)
+    blue_world = backproject(top_position, top_rotation, top_fovy,
+                             ball_pixels["up"].get("blue", ball_pixels["up"]["red"])[:2], ball_radius)
+    x0 = np.r_[wrist_pos, np.zeros(3), 0.0, red_world[:2], blue_world[:2],
                (layout.get("arm") or {}).get("joint_offsets_deg", [0] * 6)[:5]]
     best = None
     rng = np.random.default_rng(0)
