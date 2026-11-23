@@ -75,7 +75,17 @@ if (-not (Test-Path $Installer)) {
     Fail "$RepoPath 里没有 install.ps1，不像 LeForge 安装目录。用 -RepoPath 指定正确位置。"
 }
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
-    Fail "找不到 git —— 升级需要它。装： winget install --id Git.Git -e ，然后重开 PowerShell。"
+    # PATH 里没有时再找 Git for Windows 的默认安装位置
+    $GitCmd = @(
+        (Join-Path $env:ProgramFiles "Git\cmd"),
+        (Join-Path ${env:ProgramFiles(x86)} "Git\cmd"),
+        (Join-Path $env:LOCALAPPDATA "Programs\Git\cmd")
+    ) | Where-Object { $_ -and (Test-Path (Join-Path $_ "git.exe")) } | Select-Object -First 1
+    if ($GitCmd) {
+        $env:Path += ";" + $GitCmd
+    } else {
+        Fail "找不到 git —— 升级需要它。装： winget install --id Git.Git -e ，然后重开 PowerShell。"
+    }
 }
 
 Say "更新代码：$RepoPath"

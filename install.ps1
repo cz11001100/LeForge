@@ -464,6 +464,14 @@ exit $LASTEXITCODE
     $ShimBody = "@echo off`r`npowershell -NoProfile -ExecutionPolicy Bypass -File `"$Runner`" %*`r`n"
     [System.IO.File]::WriteAllText($Shim, $ShimBody)
 
+    # 把 $UvBin 写进用户 PATH，否则 leforge.cmd 在任意目录都调不到
+    $UserPath = [string][Environment]::GetEnvironmentVariable("Path", "User")
+    if (($UserPath -split ';') -notcontains $UvBin) {
+        $Joined = if ([string]::IsNullOrWhiteSpace($UserPath)) { $UvBin } else { $UserPath.TrimEnd(';') + ';' + $UvBin }
+        [Environment]::SetEnvironmentVariable("Path", $Joined, "User")
+        Say "已把 $UvBin 加入用户 PATH，重开 PowerShell 窗口后可直接运行 leforge"
+    }
+
     Write-Host ""
     Write-Host "=========================================="
     Say "安装完成"
