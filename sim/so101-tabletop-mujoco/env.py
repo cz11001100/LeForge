@@ -181,6 +181,10 @@ class _World:
             "ball_workspace",
             "ball_keepouts",
             "ball_spacing",
+            "lighting",
+            "materials",
+            "ball_physics",
+            "camera_noise",
         }
         if unknown:
             raise ValueError(f"Unknown randomize keys {sorted(unknown)}; expected joints, bodies, cameras, ball_*")
@@ -195,6 +199,30 @@ class _World:
         }
         for name, fovy in camera_fovy.items():
             self.model.cam_fovy[self._id(mujoco.mjtObj.mjOBJ_CAMERA, name, "camera_fovy")] = fovy
+        # Opt-in domain randomization groups (all default to off).
+        self.lighting = dict(randomize.get("lighting") or {})
+        self.materials = dict(randomize.get("materials") or {})
+        self.ball_physics = dict(randomize.get("ball_physics") or {})
+        self.camera_noise = dict(randomize.get("camera_noise") or {})
+        self.headlight_ambient0 = self.model.vis.headlight.ambient.copy()
+        self.headlight_diffuse0 = self.model.vis.headlight.diffuse.copy()
+        self.light_diffuse0 = self.model.light_diffuse.copy()
+        self.material_ids = {
+            name: mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_MATERIAL, name)
+            for name in self.materials
+        }
+        for name, mid in self.material_ids.items():
+            if mid < 0:
+                raise ValueError(f"Unknown material {name!r} in randomize.materials")
+        self.mat_rgba0 = self.model.mat_rgba.copy()
+        self.mass0 = self.model.body_mass.copy()
+        self.friction0 = self.model.geom_friction.copy()
+        self.ball_geoms = [
+            g for g in range(self.model.ngeom) if self.model.geom_bodyid[g] in set(self.ball_bodies.values())
+        ]
+        self._cam_gain = 1.0
+        self._cam_sigma = 0.0
+        self._noise_rng = np.random.default_rng(0)
         self.body_pos0 = self.model.body_pos.copy()
         self.body_quat0 = self.model.body_quat.copy()
         self.cam_pos0 = self.model.cam_pos.copy()
@@ -321,6 +349,7 @@ class _World:
         for camera, pos_range in self.cameras.items():
             model.cam_pos[camera] = self.cam_pos0[camera] + rng.uniform(-pos_range, pos_range)
         self._randomize_balls(rng)
+        self._randomize_appearance(rng)
         mujoco.mj_forward(model, data)
 
     def _place(self, noise: _BodyNoise, rng: np.random.Generator) -> None:
@@ -352,9 +381,68 @@ class _World:
         """World-space height of a ball's center, in meters."""
         return float(self.data.xpos[self.ball_bodies[name]][2])
 
+    @staticmethod
+    def _sample(rng: np.random.Generator, spec, default=None):
+        if spec is None:
+            return default
+        if isinstance(spec, (int, float)):
+            return float(spec)
+        lo, hi = float(spec[0]), float(spec[1])
+        return float(rng.uniform(lo, hi))
+
+    def _randomize_appearance(self, rng: np.random.Generator) -> None:
+        """Lighting, material tint, ball physics and camera noise (all opt-in)."""
+        model = self.model
+        # Restore baselines so consecutive resets do not compound.
+        model.vis.headlight.ambient[:] = self.headlight_ambient0
+        model.vis.headlight.diffuse[:] = self.headlight_diffuse0
+        model.light_diffuse[:] = self.light_diffuse0
+        model.mat_rgba[:] = self.mat_rgba0
+        model.body_mass[:] = self.mass0
+        model.geom_friction[:] = self.friction0
+        self._cam_gain = 1.0
+        self._cam_sigma = 0.0
+        if self.lighting:
+            amb = self._sample(rng, self.lighting.get("ambient"))
+            if amb is not None:
+                model.vis.headlight.ambient[:] = amb
+            dif = self._sample(rng, self.lighting.get("diffuse"))
+            if dif is not None:
+                model.vis.headlight.diffuse[:] = dif
+            key = self._sample(rng, self.lighting.get("light"))
+            if key is not None and model.nlight > 1:
+                model.light_diffuse[1] = key
+        for name, spec in self.materials.items():
+            mid = self.material_ids[name]
+            if isinstance(spec, (list, tuple)) and isinstance(spec[0], (list, tuple)):
+                rgb = [self._sample(rng, channel) for channel in spec]
+            else:
+                v = self._sample(rng, spec)
+                rgb = [v, v, v]
+            model.mat_rgba[mid, :3] = rgb
+        if self.ball_physics:
+            mass_mul = self._sample(rng, self.ball_physics.get("mass"), 1.0)
+            if mass_mul and mass_mul > 0 and mass_mul != 1.0:
+                for body in self.ball_bodies.values():
+                    model.body_mass[body] *= mass_mul
+            fric_mul = self._sample(rng, self.ball_physics.get("friction"), 1.0)
+            if fric_mul and fric_mul > 0 and fric_mul != 1.0:
+                for gid in self.ball_geoms:
+                    model.geom_friction[gid] *= fric_mul
+        if self.camera_noise:
+            self._cam_gain = self._sample(rng, self.camera_noise.get("gain"), 1.0)
+            self._cam_sigma = self._sample(rng, self.camera_noise.get("sigma"), 0.0)
+            self._noise_rng = np.random.default_rng(int(rng.integers(0, 2**31 - 1)))
+
     def render(self, camera: str) -> np.ndarray:
         self.renderer.update_scene(self.data, camera=camera)
-        return self.renderer.render().copy()
+        img = self.renderer.render().copy()
+        if self._cam_gain != 1.0 or self._cam_sigma > 0:
+            arr = img.astype(np.float32) * self._cam_gain
+            if self._cam_sigma > 0:
+                arr += self._noise_rng.normal(0.0, self._cam_sigma * 255.0, arr.shape)
+            img = np.clip(arr, 0.0, 255.0).astype(np.uint8)
+        return img
 
 
 class SO101Env(gym.Env):
