@@ -1614,6 +1614,9 @@ class SimEvalOptions(BaseModel):
     # ACT temporal ensembling coeff; None keeps the checkpoint's open-loop
     # chunk replay. ~0.01 re-predicts every step and averages overlaps.
     temporal_ensemble: float | None = None
+    # none | all | train | holdout — run every scene variant in variants.json
+    # (train/holdout split) and aggregate success across them.
+    variants: str = "none"
 
 
 @app.post("/jobs/{job_id}/validate")

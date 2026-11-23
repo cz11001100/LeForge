@@ -2576,6 +2576,7 @@ print(json.dumps(out))
             "max_episode_steps": opts.get("max_episode_steps") or None,
             "action_smooth": float(opts.get("action_smooth", 0) or 0),
             "temporal_ensemble": opts.get("temporal_ensemble"),
+            "variants": str(opts.get("variants") or "none"),
         }
         started_at = time.time()
 

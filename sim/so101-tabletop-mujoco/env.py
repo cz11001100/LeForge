@@ -568,6 +568,10 @@ DEFAULTS: dict[str, Any] = {
 
 def make_env(n_envs: int = 1, use_async_envs: bool = False, **kwargs: Any) -> dict[str, dict[int, Any]]:
     """EnvHub entry point: ``{"so101_tabletop": {0: vector_env}}``; ``kwargs`` override ``SO101Env``'s."""
-    factory = partial(SO101Env, **{**DEFAULTS, **kwargs})
+    merged = {**DEFAULTS, **kwargs}
+    if kwargs.get("randomize"):
+        # Scene variants override only the keys they care about.
+        merged["randomize"] = {**DEFAULTS["randomize"], **kwargs["randomize"]}
+    factory = partial(SO101Env, **merged)
     vector_cls = gym.vector.AsyncVectorEnv if use_async_envs else gym.vector.SyncVectorEnv
     return {"so101_tabletop": {0: vector_cls([factory] * n_envs)}}

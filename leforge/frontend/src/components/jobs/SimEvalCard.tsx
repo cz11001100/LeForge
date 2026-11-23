@@ -49,6 +49,7 @@ interface SimEvalConfig {
   envHub: string;
   smooth: string;
   ensemble: string;
+  variantMode: string;
 }
 
 const DEFAULT_CONFIG: SimEvalConfig = {
@@ -57,6 +58,7 @@ const DEFAULT_CONFIG: SimEvalConfig = {
   envHub: DEFAULT_ENV_HUB,
   smooth: "0",
   ensemble: "",
+  variantMode: "none",
 };
 
 const loadConfig = (): SimEvalConfig => {
@@ -72,6 +74,8 @@ const loadConfig = (): SimEvalConfig => {
       envHub: savedHub === LEGACY_ENV_HUB ? DEFAULT_CONFIG.envHub : savedHub,
       smooth: typeof p.smooth === "string" ? p.smooth : DEFAULT_CONFIG.smooth,
       ensemble: typeof p.ensemble === "string" ? p.ensemble : DEFAULT_CONFIG.ensemble,
+      variantMode:
+        typeof p.variantMode === "string" ? p.variantMode : DEFAULT_CONFIG.variantMode,
     };
   } catch {
     return DEFAULT_CONFIG;
@@ -257,6 +261,7 @@ const SimEvalCard: React.FC<{
   const [envHub, setEnvHub] = useState(saved.envHub);
   const [smooth, setSmooth] = useState(saved.smooth);
   const [ensemble, setEnsemble] = useState(saved.ensemble);
+  const [variantMode, setVariantMode] = useState(saved.variantMode);
   const smoothAmount = Number(smooth) || 0;
   const [envOptions, setEnvOptions] = useState<SimEnvOption[]>([]);
   const [showCustomEnv, setShowCustomEnv] = useState(false);
@@ -360,7 +365,7 @@ const SimEvalCard: React.FC<{
   }, [running, state, baseUrl, fetchWithHeaders, job.id]);
 
   const run = async () => {
-    saveConfig({ nEpisodes, batchSize, envHub, smooth, ensemble });
+    saveConfig({ nEpisodes, batchSize, envHub, smooth, ensemble, variantMode });
     setStarting(true);
     setState("running");
     setResults(null);
@@ -374,6 +379,7 @@ const SimEvalCard: React.FC<{
         env_hub_path: envHub.trim(),
         action_smooth: Math.min(0.95, Math.max(0, Number(smooth) || 0)),
         temporal_ensemble: ensemble.trim() ? Number(ensemble) : undefined,
+        variants: variantMode,
       });
       toast({ title: "仿真评测已启动" });
     } catch (e) {
@@ -570,6 +576,19 @@ const SimEvalCard: React.FC<{
               </Label>
             </div>
           )}
+          <Field label="场景变体">
+            <Select value={variantMode} onValueChange={setVariantMode}>
+              <SelectTrigger className="bg-sky-100 border-sky-300 text-slate-900 rounded-lg mt-1">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">单场景</SelectItem>
+                <SelectItem value="all">全部变体（训练+留出）</SelectItem>
+                <SelectItem value="train">仅训练变体</SelectItem>
+                <SelectItem value="holdout">仅留出变体</SelectItem>
+              </SelectContent>
+            </Select>
+          </Field>
           <div className="col-span-2 space-y-2">
             <div className="flex flex-wrap items-center gap-2">
               <Button
@@ -698,6 +717,36 @@ const SimEvalCard: React.FC<{
             {results?.notes && (
               <div className="text-xs text-amber-700 bg-amber-100 border border-amber-300/40 rounded-lg p-2">
                 {results.notes}
+              </div>
+            )}
+            {(results?.variants ?? []).length > 0 && (
+              <div className="overflow-x-auto rounded-lg border border-sky-200">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="bg-sky-100 text-slate-600">
+                      <th className="px-3 py-2 text-left">变体</th>
+                      <th className="px-3 py-2 text-left">分组</th>
+                      <th className="px-3 py-2 text-right">集数</th>
+                      <th className="px-3 py-2 text-right">成功率</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(results?.variants ?? []).map((v) => (
+                      <tr key={v.name} className="border-t border-sky-100">
+                        <td className="px-3 py-2 text-slate-900 font-mono">{v.name}</td>
+                        <td className="px-3 py-2 text-slate-600">
+                          {v.split === "train" ? "训练" : "留出"}
+                        </td>
+                        <td className="px-3 py-2 text-right text-slate-600">
+                          {v.result?.overall?.n_episodes ?? "—"}
+                        </td>
+                        <td className="px-3 py-2 text-right text-sky-700">
+                          {fmt(v.result?.overall?.pc_success, 1, "%")}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
             {results?.diagnostics && <DiagnosticsPanel d={results.diagnostics} />}

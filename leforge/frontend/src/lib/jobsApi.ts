@@ -916,6 +916,7 @@ export interface SimEvalResults {
   videos?: string[];
   diagnostics?: SimEvalDiagnostics;
   notes?: string;
+  variants?: { name: string; split: string; result: SimEvalResults }[];
   run_dir?: string;
 }
 
@@ -939,6 +940,7 @@ export interface SimEvalOptions {
   max_episode_steps?: number | null;
   action_smooth?: number;
   temporal_ensemble?: number | null;
+  variants?: string;
 }
 
 export interface SimEvalStatus {

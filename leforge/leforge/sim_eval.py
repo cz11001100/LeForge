@@ -463,6 +463,18 @@ def _safe_batch_size(requested: int, per_env_gb: float, reserve_gb: float = 5.0)
     return max(1, min(requested, int(budget // per_env_gb)))
 
 
+def _load_variants(scene: Path) -> dict | None:
+    """Scene variants (train/holdout) declared next to the scene's env.py."""
+    spec = scene / "variants.json"
+    if not spec.is_file():
+        return None
+    try:
+        data = json.loads(spec.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"variants.json 解析失败：{exc}") from exc
+    return data if isinstance(data, dict) else None
+
+
 def run_sim_eval(
     *,
     checkpoint_path: str,
@@ -475,6 +487,9 @@ def run_sim_eval(
     action_smooth: float = 0.0,
     temporal_ensemble: float | None = None,
     cancel_event=None,
+    env_extra: dict | None = None,
+    variants: str = "none",
+    job_dir: str | Path | None = None,
 ) -> dict:
     """Run lerobot-eval once; results and videos land under ``run_dir``.
 
@@ -483,9 +498,63 @@ def run_sim_eval(
     """
     run_dir = Path(run_dir)
     run_dir.mkdir(parents=True, exist_ok=True)
-    job_dir = run_dir.parent.parent
+    job_dir = Path(job_dir) if job_dir is not None else run_dir.parent.parent
     log_path = run_dir / "log.txt"
     env_hub_path = resolve_env_path(env_hub_path)
+
+    variant_mode = (variants or "none").strip().lower()
+    if variant_mode != "none":
+        if variant_mode not in ("all", "train", "holdout"):
+            raise ValueError("variants 必须是 none/all/train/holdout")
+        spec = _load_variants(Path(env_hub_path))
+        if not spec:
+            raise ValueError(f"场景缺少 variants.json：{env_hub_path}")
+        entries: list[dict] = []
+        for split in ("train", "holdout"):
+            if variant_mode in (split, "all"):
+                for item in spec.get(split) or []:
+                    entries.append({"split": split, **item})
+        if not entries:
+            raise ValueError(f"variants.json 中没有 {variant_mode} 变体")
+        sub: list[dict] = []
+        for item in entries:
+            name = str(item.get("name") or item["split"])
+            result = run_sim_eval(
+                checkpoint_path=checkpoint_path,
+                run_dir=str(run_dir / name),
+                env_hub_path=env_hub_path,
+                n_episodes=n_episodes,
+                batch_size=batch_size,
+                seed=seed,
+                max_episode_steps=max_episode_steps,
+                action_smooth=action_smooth,
+                temporal_ensemble=temporal_ensemble,
+                cancel_event=cancel_event,
+                env_extra={"randomize": item.get("randomize") or {}},
+                job_dir=job_dir,
+            )
+            sub.append({"name": name, "split": item["split"], "result": result})
+        if cancel_event is not None and cancel_event.is_set():
+            return {"cancelled": True, "exit_code": 130, "run_dir": str(run_dir.relative_to(job_dir))}
+        ok = all(entry["result"].get("success") for entry in sub)
+        totals = [(entry["result"].get("overall") or {}) for entry in sub]
+        total_eps = sum(int(t.get("n_episodes") or 0) for t in totals)
+        total_succ = sum(int(t.get("n_success") or 0) for t in totals)
+        rewards = [float(t.get("avg_max_reward") or 0.0) for t in totals]
+        overall = {
+            "n_episodes": total_eps,
+            "n_success": total_succ,
+            "pc_success": 100.0 * total_succ / total_eps if total_eps else 0.0,
+            "avg_max_reward": sum(rewards) / len(rewards) if rewards else 0.0,
+        }
+        return {
+            "success": ok,
+            "exit_code": 0 if ok else 1,
+            "overall": overall,
+            "variants": sub,
+            "notes": "",
+            "run_dir": str(run_dir.relative_to(job_dir)),
+        }
 
     # The recording buffer is per (env, episode) and lives in RAM until the
     # episode ends, so a large batch × long episode × multi-camera run gets
@@ -551,6 +620,8 @@ def run_sim_eval(
         env_kwargs["episode_length"] = int(max_episode_steps)
     if action_smooth > 0 and "so101-tabletop-mujoco" in env_hub_path:
         env_kwargs["action_smooth"] = float(action_smooth)
+    if env_extra:
+        env_kwargs.update(env_extra)
     if env_kwargs:
         cmd.append(f"--env.make_env_kwargs={json.dumps(env_kwargs)}")
 

@@ -1,0 +1,70 @@
+{
+  "train": [
+    {
+      "name": "center",
+      "randomize": {}
+    },
+    {
+      "name": "near_plate",
+      "randomize": {
+        "ball_workspace": {
+          "x": [
+            8.0,
+            22.0
+          ],
+          "y": [
+            18.0,
+            28.0
+          ]
+        }
+      }
+    },
+    {
+      "name": "left_front",
+      "randomize": {
+        "ball_workspace": {
+          "x": [
+            -10.0,
+            8.0
+          ],
+          "y": [
+            12.0,
+            26.0
+          ]
+        }
+      }
+    }
+  ],
+  "holdout": [
+    {
+      "name": "right_front",
+      "randomize": {
+        "ball_workspace": {
+          "x": [
+            12.0,
+            24.0
+          ],
+          "y": [
+            10.0,
+            20.0
+          ]
+        }
+      }
+    },
+    {
+      "name": "far_edge",
+      "randomize": {
+        "ball_workspace": {
+          "x": [
+            -6.0,
+            18.0
+          ],
+          "y": [
+            22.0,
+            30.0
+          ]
+        }
+      }
+    }
+  ]
+}
