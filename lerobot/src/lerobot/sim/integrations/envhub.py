@@ -85,6 +85,11 @@ def _download_hub_file(
         )
 
     # A local copy of the repository, e.g. one baked into a simulator Docker image.
+    # Check the whole string first: on Windows a drive-letter path like
+    # 'C:\repo\scene' would otherwise split at the colon and be taken for a Hub id.
+    if os.path.isdir(cfg_str):
+        scene = os.path.abspath(cfg_str)
+        return os.path.basename(scene), "env.py", os.path.join(scene, "env.py"), None
     directory, _, local_path = cfg_str.partition(":")
     if os.path.isdir(directory):
         file_path = local_path or "env.py"
