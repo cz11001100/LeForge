@@ -756,11 +756,11 @@ class TDMPCObservationEncoder(nn.Module):
         feat = []
         # NOTE: Order of observations matters here.
         if self.config.image_features:
-            feat.append(
-                flatten_forward_unflatten(
-                    self.image_enc_layers, obs_dict[next(iter(self.config.image_features))]
-                )
-            )
+            # Online rollout rebuilds the batch from queues keyed by the canonical OBS_IMAGE,
+            # while offline training keeps the dataset key (e.g. observation.images.up).
+            image_key = next(iter(self.config.image_features))
+            image = obs_dict[image_key] if image_key in obs_dict else obs_dict[OBS_IMAGE]
+            feat.append(flatten_forward_unflatten(self.image_enc_layers, image))
         if self.config.env_state_feature:
             feat.append(self.env_state_enc_layers(obs_dict[OBS_ENV_STATE]))
         if self.config.robot_state_feature:
