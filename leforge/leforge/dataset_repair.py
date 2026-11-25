@@ -26,16 +26,43 @@ appending to when it died cannot be read at all, so its frames and every frame
 after it are gone.
 """
 
+import gc
 import json
 import logging
+import os
 import re
 import shutil
+import time
 from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
 
 _CHUNK_FILE_RE = re.compile(r"chunk-(\d+)/file-(\d+)\.")
+
+
+def _replace_with_retry(src: Path, dst: Path, attempts: int = 8) -> None:
+    """Replace/rename with a short retry for Windows file locks (AV, open videos)."""
+    for attempt in range(attempts):
+        try:
+            os.replace(src, dst)
+            return
+        except PermissionError:
+            if attempt == attempts - 1:
+                raise
+            time.sleep(0.15 * (attempt + 1))
+
+
+def _rmtree_with_retry(path: Path, attempts: int = 6) -> None:
+    """Remove a tree, retrying while Windows/AV still holds a file open."""
+    for attempt in range(attempts):
+        try:
+            shutil.rmtree(path)
+            return
+        except OSError:
+            if attempt == attempts - 1:
+                raise
+            time.sleep(0.15 * (attempt + 1))
 
 
 class DatasetRepairError(Exception):
@@ -81,14 +108,14 @@ def _set_aside_unreadable(path: Path) -> None:
     while target.exists():
         suffix += 1
         target = path.with_suffix(path.suffix + f".unreadable{suffix}")
-    path.rename(target)
+    _replace_with_retry(path, target)
     logger.info("Set aside unreadable file: %s", target)
 
 
 def _read_info_or_recover(root: Path) -> tuple[dict[str, Any], bool]:
     info_path = root / "meta" / "info.json"
     if info_path.exists():
-        return json.loads(info_path.read_text()), False
+        return json.loads(info_path.read_text(encoding="utf-8")), False
 
     import numpy as np
     import pyarrow as pa
@@ -334,7 +361,7 @@ def _recompute_stats(root: Path, info: dict[str, Any], rows: list[dict[str, Any]
 def _read_sidecar_labels(root: Path) -> dict[str, bool]:
     path = root / "meta" / "lelab_episode_labels.json"
     try:
-        return {str(k): bool(v) for k, v in json.loads(path.read_text()).items()}
+        return {str(k): bool(v) for k, v in json.loads(path.read_text(encoding="utf-8")).items()}
     except (OSError, ValueError):
         return {}
 
@@ -412,8 +439,8 @@ def _write_episodes(root: Path, rows: list[dict[str, Any]]) -> None:
     # Rebuilding the index is the last step of a repair, and losing the old one to
     # a crash before the new one lands would leave the dataset with no index at all.
     if episodes_dir.exists():
-        shutil.rmtree(episodes_dir)
-    os.replace(staging, episodes_dir)
+        _rmtree_with_retry(episodes_dir)
+    _replace_with_retry(staging, episodes_dir)
 
 
 def normalize_episode_self_pointers(root: Path) -> int:
@@ -454,7 +481,7 @@ def normalize_episode_self_pointers(root: Path) -> int:
             table = table.set_column(field_index, table.schema.field(field_index), const)
         staging = path.with_name(path.name + ".pointers")
         pq.write_table(table, staging, compression="snappy", use_dictionary=True)
-        os.replace(staging, path)
+        _replace_with_retry(staging, path)
         fixed += table.num_rows
         logger.info("Rewrote %s self-pointers in %s", len(stale), path.name)
     return fixed
@@ -462,7 +489,7 @@ def normalize_episode_self_pointers(root: Path) -> int:
 
 def normalize_episode_metadata(root: Path) -> str:
     """Make a dataset's episode index self-consistent, and say what changed."""
-    info = json.loads((root / "meta" / "info.json").read_text())
+    info = json.loads((root / "meta" / "info.json").read_text(encoding="utf-8"))
     pointers = normalize_episode_self_pointers(root)
     columns = drop_orphan_episode_stat_columns(root, info)
     return f"{pointers} row pointer(s) and {columns} orphan stats column(s) fixed"
@@ -502,7 +529,7 @@ def drop_orphan_episode_stat_columns(root: Path, info: dict[str, Any]) -> int:
         table = table.drop_columns(orphans)
         staging = path.with_name(path.name + ".orphans")
         pq.write_table(table, staging, compression="snappy", use_dictionary=True)
-        os.replace(staging, path)
+        _replace_with_retry(staging, path)
         dropped += len(orphans)
         logger.info("Dropped %d orphan stats columns from %s: %s", len(orphans), path.name, ", ".join(orphans[:3]))
     return dropped
@@ -578,7 +605,7 @@ def check_dataset_health(repo_id: str) -> dict[str, Any]:
         return {"healthy": False, "error": "Dataset not found locally", "needs_repair": False}
 
     try:
-        info = json.loads((root / "meta" / "info.json").read_text())
+        info = json.loads((root / "meta" / "info.json").read_text(encoding="utf-8"))
         total_episodes = info.get("total_episodes", 0)
     except Exception as e:
         return {"healthy": False, "error": f"Cannot read info.json: {e}", "needs_repair": True, "total_episodes": 0}
@@ -773,7 +800,7 @@ def repair_local_dataset_with_progress(repo_id: str, force: bool = False) -> str
         info["total_episodes"] = len(rows)
         info["total_frames"] = sum(row["length"] for row in rows)
         info["splits"] = {"train": f"0:{len(rows)}"}
-        (root / "meta" / "info.json").write_text(json.dumps(info, indent=4))
+        (root / "meta" / "info.json").write_text(json.dumps(info, indent=4), encoding="utf-8")
 
         alignment_errors = episode_alignment_mismatches(root)
         if alignment_errors:
@@ -867,7 +894,7 @@ def repair_local_dataset(repo_id: str) -> str | None:
     info["total_episodes"] = len(rows)
     info["total_frames"] = sum(row["length"] for row in rows)
     info["splits"] = {"train": f"0:{len(rows)}"}
-    (root / "meta" / "info.json").write_text(json.dumps(info, indent=4))
+    (root / "meta" / "info.json").write_text(json.dumps(info, indent=4), encoding="utf-8")
 
     alignment_errors = episode_alignment_mismatches(root)
     if alignment_errors:
@@ -985,12 +1012,12 @@ def reindex_episodes_to_contiguous(root: Path) -> str | None:
             # to leave the shard half-written, since that costs the episodes in it.
             staging = path.with_suffix(".parquet.reindexing")
             pq.write_table(table, staging, compression="snappy", use_dictionary=True)
-            os.replace(staging, path)
+            _replace_with_retry(staging, path)
 
     # Rebuild the episode index, video windows, stats and info.json from the
     # now-contiguous data, reusing the same helpers the interrupted-recording
     # repair uses so the result matches what recording would have produced.
-    info = json.loads((root / "meta" / "info.json").read_text())
+    info = json.loads((root / "meta" / "info.json").read_text(encoding="utf-8"))
     fps = info["fps"]
     rows, truncated = _episodes_from_data(root)
     for path in truncated:
@@ -1009,7 +1036,7 @@ def reindex_episodes_to_contiguous(root: Path) -> str | None:
     info["total_episodes"] = len(rows)
     info["total_frames"] = sum(row["length"] for row in rows)
     info["splits"] = {"train": f"0:{len(rows)}"}
-    (root / "meta" / "info.json").write_text(json.dumps(info, indent=4))
+    (root / "meta" / "info.json").write_text(json.dumps(info, indent=4), encoding="utf-8")
 
     alignment_errors = episode_alignment_mismatches(root)
     if alignment_errors:
@@ -1085,7 +1112,7 @@ def delete_episodes_via_rebuild(root: Path, repo_id: str, episode_indices: list[
 
     tmp_root = root.with_name(root.name + "__rebuild_tmp")
     if tmp_root.exists():
-        shutil.rmtree(tmp_root)
+        _rmtree_with_retry(tmp_root)
 
     _update_repair_progress(
         percent=15, current=len(drop), total=total, phase="Re-encoding affected files, copying the rest"
@@ -1103,9 +1130,14 @@ def delete_episodes_via_rebuild(root: Path, repo_id: str, episode_indices: list[
     label = "-".join(str(i) for i in drop[:5]) + (f"-etc{len(drop)}" if len(drop) > 5 else "")
     backup = root.with_name(root.name + f"__bak_del{label}")
     if backup.exists():
-        shutil.rmtree(backup)
-    root.rename(backup)
-    tmp_root.rename(root)
+        _rmtree_with_retry(backup)
+    # Release the source/results video handles before renaming the directory:
+    # Windows refuses to rename a tree with open files (POSIX allows it).
+    del src
+    del result
+    gc.collect()
+    _replace_with_retry(root, backup)
+    _replace_with_retry(tmp_root, root)
 
     _update_repair_progress(
         active=False,

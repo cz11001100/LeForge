@@ -140,7 +140,7 @@ def load_layout(scene: Path | None) -> dict[str, Any]:
         return {}
     path = Path(scene).parent / LAYOUT_FILE
     try:
-        data = json.loads(path.read_text())
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
     except (OSError, json.JSONDecodeError):
         return {}
     return data if isinstance(data, dict) else {}

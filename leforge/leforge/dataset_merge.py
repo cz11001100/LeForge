@@ -49,7 +49,7 @@ def _cache_root() -> Path:
 def _info(repo_id: str) -> dict[str, Any] | None:
     path = _cache_root() / repo_id / "meta" / "info.json"
     try:
-        data = json.loads(path.read_text())
+        data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
     return data if isinstance(data, dict) else None
@@ -109,10 +109,11 @@ def build_merge_command(request: MergeRequest) -> list[str]:
         "-m",
         "lerobot.scripts.lerobot_edit_dataset",
         "--operation.type=merge",
-        f"--operation.repo_ids=[{','.join(request.sources)}]",
+        f"--operation.repo_ids={request.sources!r}",
         # Without roots the script would fetch each repo from the Hub instead of
-        # using the local copy we just validated.
-        f"--operation.roots=[{','.join(roots)}]",
+        # using the local copy we just validated. repr keeps Windows drive/space
+        # paths inside one valid list literal.
+        f"--operation.roots={roots!r}",
         f"--new_repo_id={request.target_repo_id}",
         f"--push_to_hub={'true' if request.push_to_hub else 'false'}",
     ]
@@ -160,7 +161,7 @@ def handle_merge(request: MergeRequest) -> dict[str, Any]:
                 f"--root={source['root']}",
                 "--new_repo_id=" + source["repo_id"],
                 f"--operation.type=remove_feature",
-                f"--operation.feature_names=[{','.join(source['optional_columns'])}]",
+                f"--operation.feature_names={source['optional_columns']!r}",
                 "--push_to_hub=false",
             ]
             code, err = _run_blocking(strip_cmd)
@@ -231,7 +232,7 @@ def handle_merge_status() -> dict[str, Any]:
 def _run_blocking(cmd: list[str], timeout: int = 900) -> tuple[int, str]:
     """Run a quick edit op to completion (column stripping before the merge)."""
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        proc = subprocess.run(cmd, capture_output=True, text=True, errors="replace", timeout=timeout)
     except subprocess.TimeoutExpired:
         return -1, f"timed out after {timeout}s"
     return proc.returncode, (proc.stderr or proc.stdout or "")

@@ -51,7 +51,7 @@ from lerobot.envs.configs import HubEnvConfig
 envs = HubEnvConfig(hub_path="lerobot/so101-tabletop-mujoco", trust_remote_code=True).create_envs(n_envs=1)
 ```
 
-`make_env_kwargs` (`--env.make_env_kwargs` on the command line) override the defaults of `SO101Env` in `env.py` (episode length, image size, cameras, initial joints, reset randomization). Headless machines need `MUJOCO_GL=egl`.
+`make_env_kwargs` (`--env.make_env_kwargs` on the command line) override the defaults of `SO101Env` in `env.py` (episode length, image size, cameras, initial joints, reset randomization). Headless Linux needs `MUJOCO_GL=egl`; Windows uses `MUJOCO_GL=wgl` (LeForge sets this automatically), with `glfw` as the windowed fallback. Windows has no EGL/osmesa.
 
 ## Layout (`layout.json`)
 

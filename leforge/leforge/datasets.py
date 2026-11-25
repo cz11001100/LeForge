@@ -293,13 +293,13 @@ def analyze_dataset(repo_id: str) -> dict[str, Any]:
     import json
     from collections import defaultdict
 
-    info = json.loads(info_json.read_text())
+    info = json.loads(info_json.read_text(encoding="utf-8"))
     fps = float(info.get("fps", 30))
 
     episodes_meta: list[dict[str, Any]] = []
     episodes_path = dataset_root / "meta" / "episodes.jsonl"
     if episodes_path.exists():
-        for line in episodes_path.read_text().splitlines():
+        for line in episodes_path.read_text(encoding="utf-8").splitlines():
             if line.strip():
                 episodes_meta.append(json.loads(line))
 
@@ -586,7 +586,7 @@ def _load_episodes_meta(dataset_root: Path) -> list[dict[str, Any]]:
     episodes: list[dict[str, Any]] = []
     jsonl = dataset_root / "meta" / "episodes.jsonl"
     if jsonl.is_file():
-        for line in jsonl.read_text().splitlines():
+        for line in jsonl.read_text(encoding="utf-8").splitlines():
             if line.strip():
                 episodes.append(json.loads(line))
     else:
@@ -606,7 +606,7 @@ def dataset_episodes(repo_id: str) -> dict[str, Any]:
     import json
 
     dataset_root = _dataset_root_checked(repo_id)
-    info = json.loads((dataset_root / "meta" / "info.json").read_text())
+    info = json.loads((dataset_root / "meta" / "info.json").read_text(encoding="utf-8"))
     cameras = [
         key
         for key, ft in (info.get("features") or {}).items()
@@ -632,7 +632,7 @@ def dataset_video_info(repo_id: str, episode: int, camera: str) -> dict[str, Any
     import json
 
     dataset_root = _dataset_root_checked(repo_id)
-    info = json.loads((dataset_root / "meta" / "info.json").read_text())
+    info = json.loads((dataset_root / "meta" / "info.json").read_text(encoding="utf-8"))
     cameras = {
         key for key, ft in (info.get("features") or {}).items() if ft.get("dtype") == "video"
     }
@@ -666,7 +666,7 @@ def dataset_episode_series(repo_id: str, episode: int, max_points: int = 400) ->
     import json
 
     dataset_root = _dataset_root_checked(repo_id)
-    info = json.loads((dataset_root / "meta" / "info.json").read_text())
+    info = json.loads((dataset_root / "meta" / "info.json").read_text(encoding="utf-8"))
     names = (info.get("features") or {}).get("action", {}).get("names") or []
     joint_names = [str(n).replace(".pos", "") for n in names]
 

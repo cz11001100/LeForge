@@ -195,7 +195,7 @@ def minimize(residual, x0, iterations=80):
 
 def main() -> None:
     args = parse_args()
-    layout = json.loads(args.layout.read_text())
+    layout = json.loads(args.layout.read_text(encoding="utf-8-sig"))
     root = Path(args.dataset).expanduser()
     states = load_episode_rows(root, args.episode)
     layout_view = layout.get("calibration") or {}
@@ -332,7 +332,7 @@ def main() -> None:
     layout["arm"]["joint_offsets_deg"] = offsets.tolist() + [0.0]
     layout["calibration"]["residual_px"] = float(np.sqrt(best[0] / len(residual(x))))
     layout["calibration"]["status"] = "auto-calibrated by calibrate_layout.py"
-    args.layout.write_text(json.dumps(layout, indent=2, ensure_ascii=False) + "\n")
+    args.layout.write_text(json.dumps(layout, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     print(f"wrist_cam: fovy {fovy:.1f}  pos {np.round(wpos, 4).tolist()}")
     print(f"joint offsets (deg): {np.round(offsets, 1).tolist()}")
     print(f"residual rms: {layout['calibration']['residual_px']:.2f}px  -> {args.layout}")

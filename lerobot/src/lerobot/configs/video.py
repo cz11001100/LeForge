@@ -275,7 +275,21 @@ class RGBEncoderConfig(VideoEncoderConfig):
 
 
 def rgb_encoder_defaults() -> RGBEncoderConfig:
-    """Return a :class:`RGBEncoderConfig` with RGB-camera defaults."""
+    """Return a :class:`RGBEncoderConfig` with RGB-camera defaults.
+
+    Prefer AV1 (smaller files), but fall back to H.264 when the PyAV wheel was
+    built without SVT-AV1. Without this, a Windows install whose wheel lacks
+    libsvtav1 would pass the import check and then fail on the first dataset
+    recording/import.
+    """
+    for codec in ("libsvtav1", "h264", "libaom-av1"):
+        try:
+            config = RGBEncoderConfig(vcodec=codec)
+        except Exception:
+            continue
+        if codec != "libsvtav1":
+            logger.warning("libsvtav1 unavailable; using %s for dataset video encoding", codec)
+        return config
     return RGBEncoderConfig()
 
 

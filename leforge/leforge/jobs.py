@@ -218,6 +218,18 @@ class MetricsHistoryPoint(BaseModel):
     grad_norm: float | None = None
 
 
+def _replace_with_retry(src: Path, dst: Path, attempts: int = 6) -> None:
+    """Atomic replace with a short retry for Windows file locks (AV, readers)."""
+    for attempt in range(attempts):
+        try:
+            os.replace(src, dst)
+            return
+        except PermissionError:
+            if attempt == attempts - 1:
+                raise
+            time.sleep(0.1 * (attempt + 1))
+
+
 def _pid_alive(pid: int) -> bool:
     """Return True if a process with this PID exists.
 
@@ -1093,14 +1105,14 @@ class JobRegistry:
         if not meta.is_file():
             return
         try:
-            data = json.loads(meta.read_text())
+            data = json.loads(meta.read_text(encoding="utf-8"))
         except Exception as exc:
             logger.warning("Migration: could not parse %s: %s", meta, exc)
             return
         data["output_dir"] = str(job_dir / "run")
         tmp = meta.with_suffix(meta.suffix + ".tmp")
-        tmp.write_text(json.dumps(data, indent=2))
-        os.replace(tmp, meta)
+        tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        _replace_with_retry(tmp, meta)
 
     def set_on_change(self, callback: Callable[[], None] | None) -> None:
         """Register a single observer fired when registry state changes."""
@@ -1887,7 +1899,7 @@ print(json.dumps(out))
             tc_path = model_dir / "train_config.json"
             if tc_path.is_file():
                 try:
-                    train_cfg = json.loads(tc_path.read_text())
+                    train_cfg = json.loads(tc_path.read_text(encoding="utf-8"))
                 except Exception as exc:  # malformed config shouldn't break the page
                     logger.warning("Bad train_config.json at %s: %s", tc_path, exc)
             weights = model_dir / "model.safetensors"
@@ -2640,12 +2652,12 @@ print(json.dumps(out))
         }
         path = _job_dir(self._output_root, job_id) / "sim_eval" / "history.json"
         try:
-            history = json.loads(path.read_text()) if path.is_file() else []
+            history = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else []
             if not isinstance(history, list):
                 history = []
             history.append(entry)
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(json.dumps(history, indent=2))
+            path.write_text(json.dumps(history, indent=2), encoding="utf-8")
         except OSError as exc:
             logger.warning("Could not write sim eval history for %s: %s", job_id, exc)
 
@@ -2677,7 +2689,7 @@ print(json.dumps(out))
         history_path = job_dir / "sim_eval" / "history.json"
         if history_path.is_file():
             with contextlib.suppress(OSError, json.JSONDecodeError):
-                history = json.loads(history_path.read_text())
+                history = json.loads(history_path.read_text(encoding="utf-8"))
         if state == "running" and run_dir_rel:
             progress = parse_progress(job_dir / run_dir_rel / "log.txt")
         return {
@@ -2769,7 +2781,7 @@ print(json.dumps(out))
             if not meta.exists():
                 continue
             try:
-                data = json.loads(meta.read_text())
+                data = json.loads(meta.read_text(encoding="utf-8"))
                 record = JobRecord.model_validate(data)
             except Exception as exc:
                 logger.warning("Skipping malformed job.json at %s: %s", meta, exc)
@@ -2797,7 +2809,7 @@ print(json.dumps(out))
                 if record.sim_eval_run_dir:
                     pid_file = _job_dir(self._output_root, record.id) / record.sim_eval_run_dir / "proc.pid"
                     with contextlib.suppress(OSError, ValueError):
-                        pid = int(pid_file.read_text().strip())
+                        pid = int(pid_file.read_text(encoding="utf-8").strip())
                         if _pid_is_sim_eval(pid):
                             _kill_pid_tree(pid)
                 record.sim_eval_state = "failed"
@@ -3072,8 +3084,8 @@ print(json.dumps(out))
         # Atomic write so a crash mid-write never strands a half-written file
         # that would skip the job on next _load_from_disk.
         tmp = path.with_suffix(path.suffix + ".tmp")
-        tmp.write_text(record.model_dump_json(indent=2))
-        os.replace(tmp, path)
+        tmp.write_text(record.model_dump_json(indent=2), encoding="utf-8")
+        _replace_with_retry(tmp, path)
         logger.info("Wrote job.json for %s: state=%s exit_code=%s", record.id, record.state, record.exit_code)
 
 

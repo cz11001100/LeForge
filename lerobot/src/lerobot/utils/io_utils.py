@@ -50,8 +50,33 @@ def write_json(data: JsonLike, fpath: Path) -> None:
         json.dump(data, f, indent=4, ensure_ascii=False)
 
 
+def _select_eval_video_codec() -> str:
+    """First usable PyAV encoder, preferring browser-friendly H.264.
+
+    Evaluation videos used to hard-code libx264. PyAV wheels built without
+    x264 (seen on some Windows installs) then fail after a full rollout. Probe
+    once and let dataset videos use ``rgb_encoder_defaults`` as well.
+    """
+    import av
+
+    for codec in ("libx264", "h264", "libsvtav1", "libaom-av1", "mpeg4"):
+        try:
+            av.codec.Codec(codec, "w")
+        except Exception:
+            continue
+        if codec not in ("libx264", "h264"):
+            logger.warning("libx264 unavailable; writing evaluation video with %s", codec)
+        if codec == "mpeg4":
+            logger.warning("Only mpeg4 is available; some browsers may not play this video")
+        return codec
+    raise RuntimeError(
+        "No usable PyAV video encoder found (tried libx264/h264/libsvtav1/libaom-av1/mpeg4). "
+        "Reinstall the av package with a wheel that includes an encoder."
+    )
+
+
 def write_video(video_path: str | Path, stacked_frames: list, fps: int) -> None:
-    """Write a sequence of RGB frames to an MP4 video file using libx264.
+    """Write a sequence of RGB frames to an MP4 video file.
 
     Args:
         video_path: Output file path.
@@ -63,6 +88,7 @@ def write_video(video_path: str | Path, stacked_frames: list, fps: int) -> None:
     require_package("av", extra="av-dep")
     import av
 
+    codec = _select_eval_video_codec()
     with av.open(str(video_path), mode="w", options={"movflags": "faststart"}) as container:
         orig_height, orig_width = stacked_frames[0].shape[:2]
         # yuv420p requires even dimensions; crop by one pixel if needed
@@ -76,7 +102,7 @@ def write_video(video_path: str | Path, stacked_frames: list, fps: int) -> None:
                 width,
                 height,
             )
-        stream = container.add_stream("libx264", rate=fps)
+        stream = container.add_stream(codec, rate=fps)
         stream.width = width
         stream.height = height
         stream.pix_fmt = "yuv420p"

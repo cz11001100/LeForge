@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import gc
 import itertools
 import logging
 import shutil
@@ -193,12 +194,22 @@ def _prepare_output(path: str | Path, preset: str) -> Path:
 
 
 def _unlink_partial(target: Path) -> None:
-    """Remove only the directory this job created after a failed import."""
-    try:
-        if target.is_dir() and target.is_relative_to(dataset_dir_root()):
+    """Remove only the directory this job created after a failed import.
+
+    Windows keeps a directory locked until the writer/video handles close, so
+    retry briefly instead of leaving a half-written dataset behind.
+    """
+    if not (target.is_dir() and target.is_relative_to(dataset_dir_root())):
+        return
+    for attempt in range(6):
+        try:
             shutil.rmtree(target)
-    except OSError:
-        logger.warning("Failed to remove partial dataset at %s", target, exc_info=True)
+            return
+        except OSError:
+            if attempt == 5:
+                logger.warning("Failed to remove partial dataset at %s", target, exc_info=True)
+                return
+            time.sleep(0.2 * (attempt + 1))
 
 
 def dataset_dir_root() -> Path:
@@ -359,8 +370,15 @@ def run_import_sync(request: ImportRequest, progress: ProgressCb | None = None) 
         _update(phase="收尾（写入元数据与视频索引）…", percent=92)
         dataset.finalize()
     except Exception:
+        dataset = None
+        gc.collect()
         _unlink_partial(target)
         raise
+
+    # Release the writer's video handles before the QC pass re-opens the
+    # dataset; Windows will otherwise report PermissionError on read.
+    del dataset
+    gc.collect()
 
     _update(phase="自动质检…", percent=95)
     qc = lerobot_qc(repo_id)

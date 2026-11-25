@@ -46,7 +46,7 @@ def lerobot_qc(repo_id: str) -> dict[str, Any]:
     if not info_path.is_file():
         return {"ok": False, "checks": checks, "stats": stats, "reminders": MAPPING_REMINDERS}
 
-    info = json.loads(info_path.read_text())
+    info = json.loads(info_path.read_text(encoding="utf-8"))
     cameras = [k for k, ft in (info.get("features") or {}).items() if ft.get("dtype") == "video"]
     stats.update(
         episodes=int(info.get("total_episodes", 0)),

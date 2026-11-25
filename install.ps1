@@ -346,7 +346,7 @@ print(", ".join(f"{c.get('name')}(#{c.get('index')})" for c in cams) or "no came
             $AllOk = $false
         }
 
-        # MuJoCo 离屏渲染：Linux 用 EGL，Windows 用 WGL（没有 EGL）。
+        # MuJoCo 离屏渲染：Linux 用 EGL，Windows 优先 WGL；WGL 失败时回退 GLFW。
         $MjProbe = Join-Path $env:TEMP "leforge-mj-probe.py"
         @'
 import mujoco
@@ -355,22 +355,37 @@ d = mujoco.MjData(m)
 r = mujoco.Renderer(m, 64, 64)
 r.update_scene(d)
 r.render()
-print("wgl ok")
+r.close()
+print("render ok")
 '@ | Set-Content -Path $MjProbe -Encoding ASCII
+        $oldMujocoGl = $env:MUJOCO_GL
         $env:MUJOCO_GL = "wgl"
         $mjRun = Run-Python $VenvPy $MjProbe
+        $mjBackend = "WGL"
+        if ($mjRun.Code -ne 0) {
+            $env:MUJOCO_GL = "glfw"
+            $mjRun = Run-Python $VenvPy $MjProbe
+            $mjBackend = "GLFW"
+        }
         Remove-Item $MjProbe -ErrorAction SilentlyContinue
-        Remove-Item Env:\MUJOCO_GL -ErrorAction SilentlyContinue
-        if ($mjRun.Code -eq 0) {
-            Write-Host "  [OK] MuJoCo 离屏渲染（WGL）"
+        if ($null -eq $oldMujocoGl) {
+            Remove-Item Env:\MUJOCO_GL -ErrorAction SilentlyContinue
         } else {
-            Warn "  [X] MuJoCo 离屏渲染（WGL）—— 仿真评测会失败，其余功能不受影响"
-            $mjRun.Text | Select-Object -Last 4 | ForEach-Object { Write-Host "        $_" }
-            Warn "      多为显卡驱动过旧或远程桌面会话限制；更新显卡驱动，或改 MUJOCO_GL=glfw 用窗口渲染再试"
+            $env:MUJOCO_GL = $oldMujocoGl
+        }
+        if ($mjRun.Code -eq 0) {
+            Write-Host "  [OK] MuJoCo 渲染（$mjBackend）"
+            if ($mjBackend -eq "GLFW") {
+                Warn "      WGL 不可用，已回退 GLFW；请保持本机桌面会话，远程桌面/无桌面会话仍可能失败"
+            }
+        } else {
+            Warn "  [X] MuJoCo 渲染（WGL/GLFW 均失败）—— 仿真评测会失败，其余功能不受影响"
+            $mjRun.Text | Select-Object -Last 6 | ForEach-Object { Write-Host "        $_" }
+            Warn "      更新显卡驱动；远程桌面会话请改本机登录；Windows 没有 EGL/osmesa"
             $AllOk = $false
         }
 
-        # 视频解码：Windows 走 PyAV（不装 torchcodec）。现编一段 mp4 再按时间戳解回来，
+        # 视频编解码：Windows 走 PyAV（不装 torchcodec）。现编一段 H.264 mp4 再按时间戳解回来，
         # 确认数据回放 / 数据集可视化真能用，而不只是 import 得动。
         $VidProbe = Join-Path $env:TEMP "leforge-video-probe.py"
         @'
@@ -384,30 +399,47 @@ from lerobot.datasets.video_utils import decode_video_frames
 from lerobot.utils.import_utils import get_safe_default_video_backend
 
 backend = get_safe_default_video_backend()
-path = os.path.join(tempfile.gettempdir(), "leforge_selftest.mp4")
-container = av.open(path, "w")
-stream = container.add_stream("mpeg4", rate=30)
-stream.width, stream.height, stream.pix_fmt = 128, 96, "yuv420p"
 rng = np.random.default_rng(0)
-for _ in range(30):
-    img = rng.integers(0, 255, (96, 128, 3), dtype=np.uint8)
-    frame = av.VideoFrame.from_ndarray(img, format="rgb24").reformat(format="yuv420p")
-    for packet in stream.encode(frame):
-        container.mux(packet)
-for packet in stream.encode():
-    container.mux(packet)
-container.close()
-
-frames = decode_video_frames(path, [0.0, 0.5], tolerance_s=0.2, backend=backend)
-assert tuple(frames.shape) == (2, 3, 96, 128), f"decoded shape {tuple(frames.shape)}, expected (2, 3, 96, 128)"
-print(f"{backend} {tuple(frames.shape)}")
+ok = []
+failed = []
+for codec in ("libx264", "libsvtav1", "h264", "libaom-av1"):
+    path = os.path.join(tempfile.gettempdir(), f"leforge_selftest_{codec}.mp4")
+    container = None
+    try:
+        container = av.open(path, "w")
+        stream = container.add_stream(codec, rate=30)
+        stream.width, stream.height, stream.pix_fmt = 128, 96, "yuv420p"
+        for _ in range(30):
+            img = rng.integers(0, 255, (96, 128, 3), dtype=np.uint8)
+            frame = av.VideoFrame.from_ndarray(img, format="rgb24").reformat(format="yuv420p")
+            for packet in stream.encode(frame):
+                container.mux(packet)
+        for packet in stream.encode():
+            container.mux(packet)
+        container.close()
+        container = None
+        frames = decode_video_frames(path, [0.0, 0.5], tolerance_s=0.2, backend=backend)
+        assert tuple(frames.shape) == (2, 3, 96, 128), f"{codec} decoded shape {tuple(frames.shape)}"
+        ok.append(codec)
+    except Exception as exc:
+        failed.append(f"{codec}: {exc}")
+    finally:
+        if container is not None:
+            container.close()
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+if not ok:
+    raise RuntimeError("没有可用的视频编码器: " + "; ".join(failed))
+print(f"ok={','.join(ok)} failed={len(failed)}")
 '@ | Set-Content -Path $VidProbe -Encoding ASCII
         $vidRun = Run-Python $VenvPy $VidProbe
         Remove-Item $VidProbe -ErrorAction SilentlyContinue
         if ($vidRun.Code -eq 0) {
-            Write-Host "  [OK] 视频解码（$($vidRun.Text | Select-Object -Last 1)）"
+            Write-Host "  [OK] 视频编解码（$($vidRun.Text | Select-Object -Last 1)）"
         } else {
-            Warn "  [X] 视频解码（数据回放 / 数据集可视化会失败）"
+            Warn "  [X] 视频编解码（数据回放 / 仿真录像 / 数据集转换会失败）"
             $vidRun.Text | Select-Object -Last 6 | ForEach-Object { Write-Host "        $_" }
             $AllOk = $false
         }

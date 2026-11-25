@@ -38,7 +38,7 @@ V2_VERSION_PREFIX = "v2"
 
 
 def _load_json(path: Path) -> dict[str, Any]:
-    return json.loads(path.read_text())
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def looks_like_lerobot_v2(path: str | Path) -> bool:
@@ -58,7 +58,7 @@ def _episodes_meta(root: Path) -> list[dict[str, Any]]:
     if not path.is_file():
         return []
     out: list[dict[str, Any]] = []
-    for line in path.read_text().splitlines():
+    for line in path.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if not line:
             continue
@@ -74,7 +74,7 @@ def _tasks(root: Path) -> dict[int, str]:
     out: dict[int, str] = {}
     if not path.is_file():
         return out
-    for line in path.read_text().splitlines():
+    for line in path.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if not line:
             continue

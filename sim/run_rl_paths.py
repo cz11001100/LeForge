@@ -196,7 +196,7 @@ def make_ctx(args: argparse.Namespace, *, need_act3: bool) -> Ctx:
     task = args.task or read_source_task(source)
 
     env = os.environ.copy()
-    env.setdefault("MUJOCO_GL", "egl")
+    env.setdefault("MUJOCO_GL", "wgl" if os.name == "nt" else "egl")
     env.setdefault("HF_HUB_OFFLINE", "1")
     env["PYTHONUNBUFFERED"] = "1"
     env.setdefault("PYTHONPATH", str(LEROBOT_DIR / "src"))

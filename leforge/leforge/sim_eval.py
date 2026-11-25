@@ -154,7 +154,7 @@ def open_scene_in_viewer(value: str | None) -> dict:
 
 def _policy_type(checkpoint_path: str) -> str:
     try:
-        cfg = json.loads((Path(checkpoint_path) / "config.json").read_text())
+        cfg = json.loads((Path(checkpoint_path) / "config.json").read_text(encoding="utf-8"))
         return str(cfg.get("type") or "").lower()
     except (OSError, json.JSONDecodeError):
         return ""
@@ -193,7 +193,7 @@ def _make_env_kwargs(checkpoint_path: str, env_hub_path: str) -> dict:
     if not config_path.is_file():
         return {}
     try:
-        config = json.loads(config_path.read_text())
+        config = json.loads(config_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return {}
     cameras = {}
@@ -349,7 +349,7 @@ def diagnose_recordings(run_dir: Path, checkpoint_path: str) -> dict:
     diag["verdict"] = verdict
 
     try:
-        (run_dir / "diagnostics.json").write_text(json.dumps(diag, indent=2, ensure_ascii=False))
+        (run_dir / "diagnostics.json").write_text(json.dumps(diag, indent=2, ensure_ascii=False), encoding="utf-8")
     except OSError as exc:
         logger.warning("Could not write diagnostics.json: %s", exc)
     return diag
@@ -370,6 +370,59 @@ def _detached_kwargs() -> dict:
         flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
         return {"creationflags": flags} if flags else {}
     return {"start_new_session": True}
+
+
+_WINDOWS_GL_PROBE = """
+import mujoco
+m = mujoco.MjModel.from_xml_string('<mujoco><worldbody><geom type="plane" size="1 1 .1"/></worldbody></mujoco>')
+d = mujoco.MjData(m)
+r = mujoco.Renderer(m, 64, 64)
+r.update_scene(d)
+r.render()
+r.close()
+print("render ok")
+"""
+
+
+def _probe_windows_gl(env: dict[str, str], gl: str) -> bool:
+    """Try one MuJoCo GL backend in a disposable child process."""
+    probe_env = env.copy()
+    probe_env["MUJOCO_GL"] = gl
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-c", _WINDOWS_GL_PROBE],
+            env=probe_env,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except Exception as exc:  # noqa: BLE001 — a probe must never abort the eval
+        logger.warning("MuJoCo %s probe failed to start: %s", gl, exc)
+        return False
+    if proc.returncode != 0:
+        detail = (proc.stderr or proc.stdout or "").strip().splitlines()[-3:]
+        logger.warning("MuJoCo %s probe failed: %s", gl, " | ".join(detail))
+        return False
+    return True
+
+
+def _select_windows_gl(env: dict[str, str]) -> None:
+    """Use WGL when possible, otherwise GLFW; leave a clear error if neither works."""
+    requested = (env.get("MUJOCO_GL") or "").lower()
+    if requested == "glfw":
+        return
+    for gl in ("wgl", "glfw"):
+        if _probe_windows_gl(env, gl):
+            env["MUJOCO_GL"] = gl
+            if requested and requested != gl:
+                logger.warning("MUJOCO_GL=%s unavailable on this Windows session; using %s", requested, gl)
+            return
+    env["MUJOCO_GL"] = requested or "wgl"
+    logger.error(
+        "Neither WGL nor GLFW could create a MuJoCo renderer. Update the GPU driver, "
+        "run from a local desktop session, or set MUJOCO_GL=glfw explicitly."
+    )
 
 
 def _kill_proc_tree(proc: subprocess.Popen, force: bool = False) -> None:
@@ -429,7 +482,7 @@ def _recording_footprint(checkpoint_path: str, steps: int) -> tuple[float, int]:
     steps × cameras × H × W × 3.
     """
     try:
-        cfg = json.loads((Path(checkpoint_path) / "config.json").read_text())
+        cfg = json.loads((Path(checkpoint_path) / "config.json").read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return 0.0, 0
     bytes_per_step = 0
@@ -469,7 +522,7 @@ def _load_variants(scene: Path) -> dict | None:
     if not spec.is_file():
         return None
     try:
-        data = json.loads(spec.read_text())
+        data = json.loads(spec.read_text(encoding="utf-8-sig"))
     except (OSError, json.JSONDecodeError) as exc:
         raise ValueError(f"variants.json 解析失败：{exc}") from exc
     return data if isinstance(data, dict) else None
@@ -629,10 +682,15 @@ def run_sim_eval(
     # EGL renders offscreen without an X display on Linux; Windows has no EGL,
     # but WGL renders offscreen through the regular OpenGL driver. glfw is the
     # opt-in "show a window" fallback on both.
-    env.setdefault("MUJOCO_GL", "wgl" if _IS_WINDOWS else "egl")
+    if _IS_WINDOWS:
+        _select_windows_gl(env)
+    else:
+        env.setdefault("MUJOCO_GL", "egl")
     if env["MUJOCO_GL"] == "glfw" and not _IS_WINDOWS:
         env.setdefault("DISPLAY", ":0")
     env["PYTHONUNBUFFERED"] = "1"
+    # Keep child stdout/stderr and the log tail in one encoding on Windows too.
+    env["PYTHONIOENCODING"] = "utf-8"
 
     logger.info("Sim eval: %s", " ".join(cmd))
     with open(log_path, "wb") as log_handle:
@@ -644,7 +702,7 @@ def run_sim_eval(
             cwd=str(run_dir),
             **_detached_kwargs(),
         )
-    (run_dir / "proc.pid").write_text(str(proc.pid))
+    (run_dir / "proc.pid").write_text(str(proc.pid), encoding="utf-8")
 
     cancelled = False
     cancel_sent_at: float | None = None
@@ -666,7 +724,7 @@ def run_sim_eval(
     info_path = run_dir / "eval_info.json"
     if exit_code == 0 and info_path.is_file():
         try:
-            info = json.loads(info_path.read_text())
+            info = json.loads(info_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
             return {
                 "success": False,
@@ -714,7 +772,7 @@ def run_sim_eval(
         }
 
     try:
-        tail = log_path.read_text(errors="replace")[-4000:]
+        tail = log_path.read_text(encoding="utf-8", errors="replace")[-4000:]
     except OSError:
         tail = ""
     return {
