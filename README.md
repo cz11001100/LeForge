@@ -27,22 +27,22 @@ leforge --stop && leforge        # 重启服务；浏览器再 Ctrl+Shift+R 硬�
 
 ## Windows
 
-**一键安装**（Windows 10/11，无需 WSL2，PowerShell 里粘贴。代码落在 `%USERPROFILE%\LeForge`，装完运行 `%USERPROFILE%\LeForge\leforge-run.ps1`）
+**一键安装**（Windows 10/11，无需 WSL2，cmd 或 PowerShell 里粘贴。代码落在 `%USERPROFILE%\LeForge`，装完运行 `%USERPROFILE%\LeForge\leforge-run.ps1`）
 
 ```powershell
-powershell -ExecutionPolicy Bypass -NoProfile -Command "irm https://raw.githubusercontent.com/cz11001100/LeForge/main/install.ps1 | iex"
+powershell -ExecutionPolicy Bypass -NoProfile -Command "irm https://raw.githubusercontent.com/cz11001100/LeForge/main/install.ps1 -OutFile $env:TEMP\leforge-install.ps1; & $env:TEMP\leforge-install.ps1"
 ```
 
-**最小安装**
+**最小安装**（装 CPU 版 torch）
 
 ```powershell
-$env:LEFORGE_PROFILE="lite"; irm https://raw.githubusercontent.com/cz11001100/LeForge/main/install.ps1 | iex
+powershell -ExecutionPolicy Bypass -NoProfile -Command "irm https://raw.githubusercontent.com/cz11001100/LeForge/main/install.ps1 -OutFile $env:TEMP\leforge-install.ps1; & $env:TEMP\leforge-install.ps1 -Cpu"
 ```
 
-**升级**（同步脚本、Python 依赖与前端产物；轻量档先执行 `$env:LEFORGE_PROFILE="lite"`）
+**升级**（同步脚本、Python 依赖与前端产物；轻量档在末尾加 `-Cpu`）
 
 ```powershell
-powershell -ExecutionPolicy Bypass -NoProfile -Command "irm https://raw.githubusercontent.com/cz11001100/LeForge/main/upgrade.ps1 | iex"
+powershell -ExecutionPolicy Bypass -NoProfile -Command "irm https://raw.githubusercontent.com/cz11001100/LeForge/main/upgrade.ps1 -OutFile $env:TEMP\leforge-upgrade.ps1; & $env:TEMP\leforge-upgrade.ps1"
 ```
 
 升级后重启服务才生效：关掉正在运行的 leforge 窗口，重新运行 `%USERPROFILE%\LeForge\leforge-run.ps1`，浏览器 Ctrl+Shift+R 硬刷新。

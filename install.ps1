@@ -1,8 +1,8 @@
 ﻿# LeForge Windows 安装 / 升级脚本（PowerShell）
 #
 # 三种用法：
-#   一键安装（干净机器，PowerShell 里直接粘贴；代码会落到 %USERPROFILE%\LeForge）：
-#       powershell -ExecutionPolicy Bypass -NoProfile -Command "irm https://raw.githubusercontent.com/cz11001100/LeForge/main/install.ps1 | iex"
+#   一键安装（干净机器，cmd / PowerShell 里直接粘贴；代码会落到 %USERPROFILE%\LeForge）：
+#       powershell -ExecutionPolicy Bypass -NoProfile -Command "irm https://raw.githubusercontent.com/cz11001100/LeForge/main/install.ps1 -OutFile $env:TEMP\leforge-install.ps1; & $env:TEMP\leforge-install.ps1"
 #   在仓库目录里安装 / 修复（解压包也行，不需要 git）：
 #       powershell -ExecutionPolicy Bypass -File .\install.ps1
 #   升级到 main 最新（等价于仓库里的 upgrade.ps1）：
@@ -38,9 +38,8 @@ param(
 $ErrorActionPreference = "Stop"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-# 轻量档：与 Linux 的 `install.sh --lite` 对应。用环境变量而不是参数，是因为
-# `irm ... | iex` 这种一键命令没法传参（脚本前还有 BOM 时 param 块也不一定生效）。
-if ($env:LEFORGE_PROFILE -eq "lite") { $Cpu = $true }
+# 注意：不要用 `irm ... | iex` 跑本脚本。脚本带 UTF-8 BOM，PowerShell 5.1 会把 BOM
+# 当成第一条命令的一部分而报错，param 块随之失效。一键命令统一先 -OutFile 落地再执行。
 
 $GitRepo = "https://github.com/cz11001100/LeForge.git"
 $UvBin   = Join-Path $env:USERPROFILE ".local\bin"
@@ -78,6 +77,18 @@ function Invoke-Git {
     Get-Content $err -ErrorAction SilentlyContinue | Where-Object { $_ -match '\S' } | ForEach-Object { Write-Host "  $_" }
     Remove-Item $out, $err -ErrorAction SilentlyContinue
     return $p.ExitCode
+}
+
+# 当前分支名。pull 时显式写 origin <分支>，不依赖本地是否设过 upstream
+# （直接 clone 会有，但重新 init / reset 过的仓库没有，`git pull` 会直接报错）。
+function Get-GitBranch([string]$Dir) {
+    $out = [System.IO.Path]::GetTempFileName()
+    $err = [System.IO.Path]::GetTempFileName()
+    $p = Start-Process -FilePath "git" -ArgumentList @("-C", $Dir, "rev-parse", "--abbrev-ref", "HEAD") `
+        -NoNewWindow -Wait -PassThru -RedirectStandardOutput $out -RedirectStandardError $err
+    $b = Get-Content $out -ErrorAction SilentlyContinue | Select-Object -First 1
+    Remove-Item $out, $err -ErrorAction SilentlyContinue
+    if ($p.ExitCode -eq 0 -and $b) { return $b.Trim() } else { return "main" }
 }
 
 function Ensure-Git {
@@ -142,7 +153,7 @@ if ($LocalRepo) {
     # 仅按现有代码重装依赖。
     if ($Upgrade -and (Test-Path (Join-Path $Root ".git"))) {
         Say "更新代码到 main 最新..."
-        $code = Invoke-Git @("-c", "http.version=HTTP/1.1", "-c", "http.lowSpeedLimit=0", "-C", $Root, "pull", "--ff-only")
+        $code = Invoke-Git @("-c", "http.version=HTTP/1.1", "-c", "http.lowSpeedLimit=0", "-C", $Root, "pull", "--ff-only", "origin", (Get-GitBranch $Root))
         if ($code -ne 0) {
             Warn "git pull 失败（本地有改动或网络不通），继续用当前代码安装"
         }
@@ -468,15 +479,28 @@ exit $LASTEXITCODE
     Write-Host ""
 } else {
     # ================= 在线模式（一键安装） =================
-    # 没有本地仓库（例如 `irm ... | iex`）：先在 %USERPROFILE%\LeForge 落地一份代码，
-    # 再交给这份代码里的 install.ps1 按本地模式安装。脚本、源码、前端 dist 都在同一个
-    # git 工作树里，所以升级时一次 git pull 就能全部更新。
+    # 没有本地仓库（一键命令）：先在 %USERPROFILE%\LeForge 落地一份代码，再交给这份
+    # 代码里的 install.ps1 按本地模式安装。脚本、源码、前端 dist 都在同一个 git 工作树
+    # 里，所以升级时一次 git pull 就能全部更新。
+    # 已有安装但不在默认目录（例如装在别的盘）时，从 leforge 启动器反查路径复用，
+    # 免得重跑一键命令又克隆出第二份。
+    if (-not $RepoPath) {
+        $cands = @((Join-Path $env:USERPROFILE "LeForge"))
+        $launcher = Join-Path $env:USERPROFILE ".local\bin\leforge.cmd"
+        if (Test-Path $launcher) {
+            $m = Select-String -Path $launcher -Pattern '-File\s+"([^"]+)"' -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($m) { $cands += (Split-Path -Parent $m.Matches[0].Groups[1].Value) }
+        }
+        foreach ($c in $cands) {
+            if (Test-Path (Join-Path $c "leforge\pyproject.toml")) { $RepoPath = $c; break }
+        }
+    }
     if (-not $RepoPath) { $RepoPath = Join-Path $env:USERPROFILE "LeForge" }
     Ensure-Git
 
     if (Test-Path (Join-Path $RepoPath ".git")) {
         Say "复用已有代码：$RepoPath"
-        $code = Invoke-Git @("-c", "http.version=HTTP/1.1", "-c", "http.lowSpeedLimit=0", "-C", $RepoPath, "pull", "--ff-only")
+        $code = Invoke-Git @("-c", "http.version=HTTP/1.1", "-c", "http.lowSpeedLimit=0", "-C", $RepoPath, "pull", "--ff-only", "origin", (Get-GitBranch $RepoPath))
         if ($code -ne 0) { Warn "git pull 失败（本地有改动或网络不通），继续用现有代码安装" }
     } else {
         if (Test-Path $RepoPath) {
