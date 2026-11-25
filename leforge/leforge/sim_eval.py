@@ -535,7 +535,7 @@ def run_sim_eval(
             )
             sub.append({"name": name, "split": item["split"], "result": result})
         if cancel_event is not None and cancel_event.is_set():
-            return {"cancelled": True, "exit_code": 130, "run_dir": str(run_dir.relative_to(job_dir))}
+            return {"cancelled": True, "exit_code": 130, "run_dir": run_dir.relative_to(job_dir).as_posix()}
         ok = all(entry["result"].get("success") for entry in sub)
         totals = [(entry["result"].get("overall") or {}) for entry in sub]
         total_eps = sum(int(t.get("n_episodes") or 0) for t in totals)
@@ -553,7 +553,7 @@ def run_sim_eval(
             "overall": overall,
             "variants": sub,
             "notes": "",
-            "run_dir": str(run_dir.relative_to(job_dir)),
+            "run_dir": run_dir.relative_to(job_dir).as_posix(),
         }
 
     # The recording buffer is per (env, episode) and lives in RAM until the
@@ -661,7 +661,7 @@ def run_sim_eval(
 
     rel_run = run_dir.relative_to(job_dir)
     if cancelled:
-        return {"cancelled": True, "exit_code": exit_code, "run_dir": str(rel_run)}
+        return {"cancelled": True, "exit_code": exit_code, "run_dir": rel_run.as_posix()}
 
     info_path = run_dir / "eval_info.json"
     if exit_code == 0 and info_path.is_file():
@@ -672,7 +672,7 @@ def run_sim_eval(
                 "success": False,
                 "exit_code": exit_code,
                 "error": f"eval_info.json 解析失败: {exc}",
-                "run_dir": str(rel_run),
+                "run_dir": rel_run.as_posix(),
             }
         videos = []
         for p in info.get("overall", {}).get("video_paths", []):
@@ -681,7 +681,7 @@ def run_sim_eval(
             except ValueError:
                 continue
             if (job_dir / rel).is_file():
-                videos.append(str(rel))
+                videos.append(rel.as_posix())
         try:
             diagnostics = diagnose_recordings(run_dir, checkpoint_path)
         except Exception as exc:
@@ -710,7 +710,7 @@ def run_sim_eval(
             "videos": videos,
             "diagnostics": diagnostics,
             "notes": notes,
-            "run_dir": str(rel_run),
+            "run_dir": rel_run.as_posix(),
         }
 
     try:
@@ -731,5 +731,5 @@ def run_sim_eval(
         ),
         "log_tail": tail,
         "notes": notes,
-        "run_dir": str(rel_run),
+        "run_dir": rel_run.as_posix(),
     }

@@ -2505,6 +2505,8 @@ print(json.dumps(out))
     def get_evaluation_artifact(self, job_id: str, rel_path: str) -> Path:
         """Resolve a chart PNG produced by the evaluator, inside the job dir only."""
         root = _job_dir(self._output_root, job_id).resolve()
+        # Windows records store ``evaluation\...``; URLs and the prefix check use ``/``.
+        rel_path = str(rel_path).replace("\\", "/")
         candidate = (root / rel_path).resolve()
         if not str(rel_path).startswith("evaluation/") or candidate.suffix != ".png":
             raise ValueError("Only evaluation chart files can be read")
@@ -2561,7 +2563,7 @@ print(json.dumps(out))
             )
             record.sim_eval_state = "running"
             record.sim_eval_results = None
-            record.sim_eval_run_dir = str(run_dir.relative_to(_job_dir(self._output_root, job_id)))
+            record.sim_eval_run_dir = run_dir.relative_to(_job_dir(self._output_root, job_id)).as_posix()
             self._persist(record, force=True)
             cancel_event = threading.Event()
             self._cancel_events[f"sim_eval:{job_id}"] = cancel_event
@@ -2710,6 +2712,8 @@ print(json.dumps(out))
     def get_sim_eval_artifact(self, job_id: str, rel_path: str) -> Path:
         """Serve one sim-eval artifact (episode mp4 or json), inside the job dir only."""
         root = _job_dir(self._output_root, job_id).resolve()
+        # Windows records store ``sim_eval\...``; URLs and the prefix check use ``/``.
+        rel_path = str(rel_path).replace("\\", "/")
         candidate = (root / rel_path).resolve()
         if not str(rel_path).startswith("sim_eval/") or candidate.suffix not in (".mp4", ".json"):
             raise ValueError("Only sim_eval artifacts can be read")
