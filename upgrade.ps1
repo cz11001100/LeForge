@@ -87,5 +87,11 @@ if ($code -ne 0) {
 Say "重装依赖与前端产物 ..."
 $ChildArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $Installer, "-Upgrade")
 if ($Cpu) { $ChildArgs += "-Cpu" }
+# 子进程会把 uv 的进度写到 stderr；父脚本是 Stop 模式时，只要输出被重定向
+# （upgrade.ps1 > log）就会被当成终止错误。这里临时放宽，退出码单独取。
+$PrevEap = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
 & powershell @ChildArgs
-exit $LASTEXITCODE
+$code = $LASTEXITCODE
+$ErrorActionPreference = $PrevEap
+exit $code

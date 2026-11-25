@@ -529,8 +529,14 @@ exit $LASTEXITCODE
     if ($SkipSelfCheck) { $Forward += "-SkipSelfCheck" }
 
     Say "代码就绪，按本地模式继续安装 ..."
+    # 子进程会把 uv 的进度写到 stderr；父脚本是 Stop 模式时，输出一旦被重定向
+    # （install.ps1 > log）就会被当成终止错误。这里临时放宽，退出码单独取。
+    $PrevEap = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
     & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $RepoPath "install.ps1") @Forward
-    exit $LASTEXITCODE
+    $code = $LASTEXITCODE
+    $ErrorActionPreference = $PrevEap
+    exit $code
 }
 
 Write-Host "Windows 注意："
