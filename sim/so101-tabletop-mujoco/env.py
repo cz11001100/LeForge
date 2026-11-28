@@ -76,6 +76,10 @@ TARGET_BALLS = {
 }
 # A ball counts as grasped once its center rises this far above its reset height.
 LIFT_SUCCESS = 0.05
+# Opt-in grasp-assist thresholds in real-robot gripper units (0=closed, 100=open).
+GRASP_ASSIST_DISTANCE = 0.026
+GRASP_ASSIST_RELEASE = 60.0
+GRASP_ASSIST_LIFT_DEG = 10.0
 # User frame: x=0 at the base right edge, y=0 at the base front edge, +x right,
 # +y forward. MuJoCo: X = y + BASE_FRONT_X, Y = -x + BASE_RIGHT_Y.
 BASE_FRONT_X = 0.083
@@ -178,6 +182,7 @@ class _World:
         camera_fovy: Mapping[str, float],
     ):
         self.layout = load_layout(scene)
+        self.camera_hflip: dict[str, bool] = {}
         self.model = build_model(scene, root)
         # Layout values default to the MJCF/constants until _apply_layout runs below.
         self.joint_offsets = np.zeros(len(JOINTS))
@@ -271,10 +276,12 @@ class _World:
         balls = layout.get("balls") or {}
         if "radius_cm" in balls:
             self.ball_radius = float(balls["radius_cm"]) / 100.0
+        self.camera_hflip = {}
         for name, cfg in (layout.get("cameras") or {}).items():
             camera = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_CAMERA, name)
             if camera < 0:
                 continue
+            self.camera_hflip[name] = bool(cfg.get("hflip", False))
             if "pos" in cfg:
                 model.cam_pos[camera] = cfg["pos"]
             if "quat" in cfg:
@@ -513,6 +520,8 @@ class _World:
             if self._cam_sigma > 0:
                 arr += self._noise_rng.normal(0.0, self._cam_sigma * 255.0, arr.shape)
             img = np.clip(arr, 0.0, 255.0).astype(np.uint8)
+        if self.camera_hflip.get(camera, False):
+            img = img[:, ::-1]
         return img
 
 
@@ -534,6 +543,7 @@ class SO101Env(gym.Env):
         randomize: Mapping[str, Any] | None = None,
         camera_fovy: Mapping[str, float] | None = None,
         action_smooth: float = 0.0,
+        grasp_assist: bool = False,
     ):
         super().__init__()
         # None: the repository's tabletop scene, located on first use.
@@ -574,10 +584,29 @@ class SO101Env(gym.Env):
         # for visibly smoother arm motion; ACT temporal ensembling is the
         # preferred smoother and lives in the policy config.
         self.action_smooth = float(np.clip(action_smooth, 0.0, 0.95))
+        # Opt-in kinematic grasp aid for demos and pipeline debugging. It is
+        # reported separately and must never be treated as pure-policy success.
+        self.grasp_assist = bool(grasp_assist)
         self._smoothed_action: np.ndarray | None = None
         self._world: _World | None = None
         self._target_ball: str | None = None
         self._ball_z0 = 0.0
+        self._prev_gripper_action: float | None = None
+        self._gripper_ball_min_distance = float("inf")
+        self._gripper_ball_contact_steps = 0
+        self._gripper_closing_contact_steps = 0
+        self._gripper_ball_first_contact_step = 0
+        self._gripper_ball_max_force = 0.0
+        self._gripper_action_min = float("inf")
+        self._gripper_ball_current_distance = float("inf")
+        self._grasp_assist_current_distance = float("inf")
+        self._max_lift = 0.0
+        self._grasp_assist_attached = False
+        self._grasp_assist_used = False
+        self._grasp_assist_steps = 0
+        self._grasp_assist_attach_step = 0
+        self._grasp_assist_rel_pos = np.zeros(3, dtype=np.float64)
+        self._grasp_assist_rel_quat = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float64)
 
         image = spaces.Box(0, 255, (self.height, self.width, 3), np.uint8)
         self.observation_space = spaces.Dict(
@@ -616,13 +645,34 @@ class SO101Env(gym.Env):
         return self._ensure_world().render(self.cameras.get(key, key))
 
     def _update_metrics(self, world: _World) -> None:
-        """Accumulate collision and joint-limit diagnostics for the eval report."""
+        """Accumulate collision, joint-limit and grasp diagnostics for the eval report."""
         model, data = world.model, world.data
         if getattr(self, "_metric_cache", None) is None:
             robot_bodies = {mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, n) for n in ROBOT_BODIES}
             ball_bodies = set(world.ball_bodies.values())
             self._robot_geoms = {g for g in range(model.ngeom) if model.geom_bodyid[g] in robot_bodies}
             self._ball_geoms = {g for g in range(model.ngeom) if model.geom_bodyid[g] in ball_bodies}
+            self._ball_geoms_by_body = {
+                name: {g for g in range(model.ngeom) if model.geom_bodyid[g] == body}
+                for name, body in world.ball_bodies.items()
+            }
+            gripper_bodies = {
+                mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, n)
+                for n in ("gripper", "moving_jaw_so101_v1")
+            }
+            self._gripper_geoms = {
+                g
+                for g in range(model.ngeom)
+                if model.geom_bodyid[g] in gripper_bodies
+                and (model.geom_contype[g] != 0 or model.geom_conaffinity[g] != 0)
+            }
+            self._grasp_geoms = {
+                g
+                for g in self._gripper_geoms
+                if not (mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, g) or "").startswith("camera_")
+            }
+            self._grasp_site = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, "gripperframe")
+            self._geom_distance_fromto = np.empty((2, 3), dtype=np.float64)
             self._joint_limits = []
             for jname in JOINTS[:5]:
                 jid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, jname)
@@ -649,6 +699,109 @@ class SO101Env(gym.Env):
             if q - lo < np.radians(2.0) or hi - q < np.radians(2.0):
                 self._limit_violations += 1
 
+    def _update_grasp_metrics(self, world: _World, gripper_action: float) -> None:
+        """Track target-ball proximity, contact while closing, force and lift."""
+        model, data = world.model, world.data
+        if getattr(self, "_metric_cache", None) is None:
+            self._update_metrics(world)
+        ball_geoms = self._ball_geoms_by_body[self._target_ball]
+        min_distance = float("inf")
+        grasp_distance = float("inf")
+        for gripper_geom in self._gripper_geoms:
+            for ball_geom in ball_geoms:
+                if hasattr(mujoco, "mj_geomDistance"):
+                    distance = mujoco.mj_geomDistance(
+                        model, data, gripper_geom, ball_geom, 1.0, self._geom_distance_fromto
+                    )
+                else:
+                    distance = float(
+                        np.linalg.norm(data.geom_xpos[gripper_geom] - data.geom_xpos[ball_geom])
+                        - model.geom_rbound[gripper_geom]
+                        - model.geom_rbound[ball_geom]
+                    )
+                min_distance = min(min_distance, float(distance))
+                if gripper_geom in self._grasp_geoms:
+                    grasp_distance = min(grasp_distance, float(distance))
+        self._gripper_ball_current_distance = min_distance
+        self._grasp_assist_current_distance = grasp_distance
+        self._gripper_ball_min_distance = min(self._gripper_ball_min_distance, min_distance)
+        self._gripper_action_min = min(self._gripper_action_min, float(gripper_action))
+
+        contact_count = 0
+        max_force = 0.0
+        force = np.zeros(6, dtype=np.float64)
+        for ci in range(data.ncon):
+            con = data.contact[ci]
+            g1, g2 = int(con.geom1), int(con.geom2)
+            touches_gripper = (g1 in self._gripper_geoms and g2 in ball_geoms) or (
+                g2 in self._gripper_geoms and g1 in ball_geoms
+            )
+            if not touches_gripper:
+                continue
+            contact_count += 1
+            mujoco.mj_contactForce(model, data, ci, force)
+            max_force = max(max_force, abs(float(force[0])))
+        closing = self._prev_gripper_action is not None and gripper_action < self._prev_gripper_action - 0.05
+        self._prev_gripper_action = float(gripper_action)
+        if contact_count:
+            self._gripper_ball_contact_steps += 1
+            if self._gripper_ball_first_contact_step == 0:
+                self._gripper_ball_first_contact_step = self._steps
+            if closing:
+                self._gripper_closing_contact_steps += 1
+        self._gripper_ball_max_force = max(self._gripper_ball_max_force, max_force)
+
+    def _update_grasp_assist(self, world: _World, gripper_action: float) -> None:
+        """Optionally keep the target ball fixed between the jaws for demos."""
+        if not self.grasp_assist:
+            return
+        model, data = world.model, world.data
+        if self._grasp_site < 0:
+            raise RuntimeError("grasp_assist requires the scene's gripperframe site")
+        body = world.ball_bodies[self._target_ball]
+        qadr = world._free_qadr(body)
+        if qadr is None:
+            raise RuntimeError(f"Target ball {self._target_ball!r} must have a freejoint")
+
+        if self._grasp_assist_attached:
+            if gripper_action > GRASP_ASSIST_RELEASE:
+                self._grasp_assist_attached = False
+                return
+            # Active assist: once the ball is in range, close the real gripper
+            # actuator instead of waiting for the policy to notice the contact.
+            data.ctrl[world.actuators[5]] = world.lo[5]
+            site_pos = data.site_xpos[self._grasp_site]
+            site_mat = data.site_xmat[self._grasp_site].reshape(3, 3)
+            site_quat = np.empty(4, dtype=np.float64)
+            mujoco.mju_mat2Quat(site_quat, site_mat.reshape(9))
+            data.qpos[qadr : qadr + 3] = site_pos + site_mat @ self._grasp_assist_rel_pos
+            ball_quat = np.empty(4, dtype=np.float64)
+            mujoco.mju_mulQuat(ball_quat, site_quat, self._grasp_assist_rel_quat)
+            data.qpos[qadr + 3 : qadr + 7] = ball_quat
+            data.qvel[qadr : qadr + 6] = 0.0
+            self._grasp_assist_steps += 1
+            mujoco.mj_forward(model, data)
+            return
+
+        if self._grasp_assist_current_distance > GRASP_ASSIST_DISTANCE:
+            return
+        site_pos = data.site_xpos[self._grasp_site]
+        site_mat = data.site_xmat[self._grasp_site].reshape(3, 3)
+        site_quat = np.empty(4, dtype=np.float64)
+        mujoco.mju_mat2Quat(site_quat, site_mat.reshape(9))
+        inv_site_quat = site_quat.copy()
+        inv_site_quat[1:] *= -1.0
+        self._grasp_assist_rel_pos = site_mat.T @ (data.qpos[qadr : qadr + 3] - site_pos)
+        mujoco.mju_mulQuat(
+            self._grasp_assist_rel_quat,
+            inv_site_quat,
+            data.qpos[qadr + 3 : qadr + 7],
+        )
+        self._grasp_assist_attached = True
+        self._grasp_assist_used = True
+        self._grasp_assist_attach_step = self._steps
+        data.ctrl[world.actuators[5]] = world.lo[5]
+
     def _obs(self, world: _World) -> dict[str, Any]:
         return {
             "agent_pos": world.joint_state(),
@@ -670,6 +823,23 @@ class SO101Env(gym.Env):
         self._steps = 0
         self._collisions = 0
         self._limit_violations = 0
+        self._prev_gripper_action = None
+        self._gripper_ball_min_distance = float("inf")
+        self._gripper_ball_contact_steps = 0
+        self._gripper_closing_contact_steps = 0
+        self._gripper_ball_first_contact_step = 0
+        self._gripper_ball_max_force = 0.0
+        self._gripper_action_min = float("inf")
+        self._gripper_ball_current_distance = float("inf")
+        self._grasp_assist_current_distance = float("inf")
+        self._max_lift = 0.0
+        self._grasp_assist_attached = False
+        self._grasp_assist_used = False
+        self._grasp_assist_steps = 0
+        self._grasp_assist_attach_step = 0
+        self._grasp_assist_rel_pos = np.zeros(3, dtype=np.float64)
+        self._grasp_assist_rel_quat = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float64)
+        self._update_grasp_metrics(world, float(self.initial_joints[5]))
         ball_positions_cm = {}
         for name, body in world.ball_bodies.items():
             x_mj, y_mj = world.data.xpos[body][:2]
@@ -694,11 +864,21 @@ class SO101Env(gym.Env):
             prev = self._smoothed_action if self._smoothed_action is not None else action
             action = self.action_smooth * prev + (1 - self.action_smooth) * action
             self._smoothed_action = action
+        policy_gripper = float(action[5])
+        if self.grasp_assist and self._grasp_assist_attached:
+            # Active demo assist: keep the gripper closed and add a small
+            # elbow-flex residual that raises the grasped ball.
+            action = action.copy()
+            action[2] -= GRASP_ASSIST_LIFT_DEG
+            action[5] = 0.0
         world.data.ctrl[world.actuators] = world.to_ctrl(action)
         mujoco.mj_step(world.model, world.data, nstep=world.substeps)
         self._steps += 1
         self._update_metrics(world)
+        self._update_grasp_metrics(world, policy_gripper)
+        self._update_grasp_assist(world, policy_gripper)
         lift = world.ball_height(self._target_ball) - self._ball_z0
+        self._max_lift = max(self._max_lift, float(lift))
         success = lift >= LIFT_SUCCESS
         truncated = self._steps >= self._max_episode_steps and not success
         info = {
@@ -709,7 +889,20 @@ class SO101Env(gym.Env):
                 "collisions": float(self._collisions),
                 "limit_violations": float(self._limit_violations),
                 "cycle_steps": float(self._steps if success else 0.0),
+                "gripper_ball_min_distance_m": float(self._gripper_ball_min_distance),
+                "gripper_ball_contact_steps": float(self._gripper_ball_contact_steps),
+                "gripper_closing_contact_steps": float(self._gripper_closing_contact_steps),
+                "gripper_ball_first_contact_step": float(self._gripper_ball_first_contact_step),
+                "gripper_ball_max_force_n": float(self._gripper_ball_max_force),
+                "gripper_action_min": float(self._gripper_action_min),
+                "max_lift_m": float(self._max_lift),
+                "grasp_assist_used": float(self._grasp_assist_used),
+                "grasp_assist_attached": float(self._grasp_assist_attached),
+                "grasp_assist_steps": float(self._grasp_assist_steps),
+                "grasp_assist_attach_step": float(self._grasp_assist_attach_step),
             },
+            "grasp_assist": self.grasp_assist,
+            "grasp_assist_attached": self._grasp_assist_attached,
         }
         return self._obs(world), 1.0 if success else 0.0, success, truncated, info
 

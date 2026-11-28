@@ -45,19 +45,23 @@ const ENSEMBLE_DEFAULT = "0.01";
 
 interface SimEvalConfig {
   nEpisodes: number;
+  maxSteps: string;
   batchSize: number;
   envHub: string;
   smooth: string;
   ensemble: string;
+  replanSteps: string;
   variantMode: string;
 }
 
 const DEFAULT_CONFIG: SimEvalConfig = {
   nEpisodes: 10,
+  maxSteps: "400",
   batchSize: 1,
   envHub: DEFAULT_ENV_HUB,
   smooth: "0",
   ensemble: "",
+  replanSteps: "20",
   variantMode: "none",
 };
 
@@ -69,11 +73,16 @@ const loadConfig = (): SimEvalConfig => {
     const savedHub = typeof p.envHub === "string" ? p.envHub : DEFAULT_CONFIG.envHub;
     return {
       nEpisodes: typeof p.nEpisodes === "number" ? p.nEpisodes : DEFAULT_CONFIG.nEpisodes,
+      maxSteps: typeof p.maxSteps === "string" ? p.maxSteps : DEFAULT_CONFIG.maxSteps,
       batchSize: typeof p.batchSize === "number" ? p.batchSize : DEFAULT_CONFIG.batchSize,
       // Older saves pointed at the Hub copy of the same scene; prefer the builtin one.
       envHub: savedHub === LEGACY_ENV_HUB ? DEFAULT_CONFIG.envHub : savedHub,
       smooth: typeof p.smooth === "string" ? p.smooth : DEFAULT_CONFIG.smooth,
       ensemble: typeof p.ensemble === "string" ? p.ensemble : DEFAULT_CONFIG.ensemble,
+      replanSteps:
+        typeof p.replanSteps === "string" ? p.replanSteps : DEFAULT_CONFIG.replanSteps,
+      graspAssist:
+        typeof p.graspAssist === "boolean" ? p.graspAssist : DEFAULT_CONFIG.graspAssist,
       variantMode:
         typeof p.variantMode === "string" ? p.variantMode : DEFAULT_CONFIG.variantMode,
     };
@@ -257,10 +266,13 @@ const SimEvalCard: React.FC<{
   const [checkpoints, setCheckpoints] = useState<JobCheckpoint[]>([]);
   const [step, setStep] = useState<string>("");
   const [nEpisodes, setNEpisodes] = useState(saved.nEpisodes);
+  const [maxSteps, setMaxSteps] = useState(saved.maxSteps);
   const [batchSize, setBatchSize] = useState(saved.batchSize);
   const [envHub, setEnvHub] = useState(saved.envHub);
   const [smooth, setSmooth] = useState(saved.smooth);
   const [ensemble, setEnsemble] = useState(saved.ensemble);
+  const [replanSteps, setReplanSteps] = useState(saved.replanSteps);
+  const [graspAssist, setGraspAssist] = useState(saved.graspAssist);
   const [variantMode, setVariantMode] = useState(saved.variantMode);
   const smoothAmount = Number(smooth) || 0;
   const [envOptions, setEnvOptions] = useState<SimEnvOption[]>([]);
@@ -365,7 +377,17 @@ const SimEvalCard: React.FC<{
   }, [running, state, baseUrl, fetchWithHeaders, job.id]);
 
   const run = async () => {
-    saveConfig({ nEpisodes, batchSize, envHub, smooth, ensemble, variantMode });
+    saveConfig({
+      nEpisodes,
+      maxSteps,
+      batchSize,
+      envHub,
+      smooth,
+      ensemble,
+      replanSteps,
+      graspAssist,
+      variantMode,
+    });
     setStarting(true);
     setState("running");
     setResults(null);
@@ -375,10 +397,13 @@ const SimEvalCard: React.FC<{
       await startJobSimEval(baseUrl, fetchWithHeaders, job.id, {
         step: step ? Number(step) : undefined,
         n_episodes: nEpisodes,
+        max_episode_steps: Math.max(1, Math.round(Number(maxSteps) || 400)),
         batch_size: batchSize,
         env_hub_path: envHub.trim(),
         action_smooth: Math.min(0.95, Math.max(0, Number(smooth) || 0)),
         temporal_ensemble: ensemble.trim() ? Number(ensemble) : undefined,
+        replan_steps: Math.max(1, Math.round(Number(replanSteps) || 20)),
+        grasp_assist: graspAssist,
         variants: variantMode,
       });
       toast({ title: "仿真评测已启动" });
@@ -510,6 +535,17 @@ const SimEvalCard: React.FC<{
               className="bg-sky-100 border-sky-300 text-slate-900 rounded-lg mt-1"
             />
           </Field>
+          <Field label="每集最大步数">
+            <NumberInput
+              value={Number(maxSteps) || 400}
+              min={1}
+              onChange={(v) => setMaxSteps(String(v ?? 400))}
+              className="bg-sky-100 border-sky-300 text-slate-900 rounded-lg mt-1"
+            />
+            <div className="text-[11px] text-slate-500 mt-1">
+              真实 ACT3 红球回合中位数约 327 步，默认 400
+            </div>
+          </Field>
           <Field label="并行环境">
             <NumberInput
               value={batchSize}
@@ -576,6 +612,28 @@ const SimEvalCard: React.FC<{
               </Label>
             </div>
           )}
+          <Field label="ACT 动作块步数">
+            <NumberInput
+              value={Number(replanSteps) || 20}
+              min={1}
+              disabled={ensemble.trim() !== ""}
+              onChange={(v) => setReplanSteps(String(v ?? 20))}
+              className="bg-sky-100 border-sky-300 text-slate-900 rounded-lg mt-1 disabled:opacity-50"
+            />
+            <div className="text-[11px] text-slate-500 mt-1">
+              默认 20；时序集成开启时固定为 1，非 ACT 忽略
+            </div>
+          </Field>
+          <div className="flex items-center space-x-3">
+            <Switch
+              id="sim_grasp_assist"
+              checked={graspAssist}
+              onCheckedChange={setGraspAssist}
+            />
+            <Label htmlFor="sim_grasp_assist" className="text-slate-700 text-sm">
+              抓取辅助（仅演示）
+            </Label>
+          </div>
           <Field label="场景变体">
             <Select value={variantMode} onValueChange={setVariantMode}>
               <SelectTrigger className="bg-sky-100 border-sky-300 text-slate-900 rounded-lg mt-1">
@@ -627,6 +685,12 @@ const SimEvalCard: React.FC<{
             )}
           </div>
         </div>
+        {graspAssist && (
+          <div className="text-xs text-amber-800 bg-amber-100 border border-amber-300/60 rounded-lg p-2">
+            抓取辅助会在球进入夹爪 2.6 cm 范围时主动闭合、固定球并施加小幅抬升残差，仅用于流程演示和调试；
+            辅助评测不会进入 Checkpoint 成功率排序。
+          </div>
+        )}
 
         <div className="mt-auto flex flex-wrap items-center gap-4">
           {running ? (
@@ -684,9 +748,14 @@ const SimEvalCard: React.FC<{
 
         {state === "done" && overall && (
           <>
+            {results?.grasp_assist && (
+              <div className="text-sm text-amber-800 bg-amber-100 border border-amber-300/60 rounded-lg p-3">
+                本次启用了抓取辅助，以下为辅助演示结果，不是纯策略成功率，也未计入 Checkpoint 排序。
+              </div>
+            )}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <Metric
-                label="成功率"
+                label={results?.grasp_assist ? "辅助演示成功率" : "成功率"}
                 value={fmt(overall.pc_success, 1, "%")}
                 hint={
                   overall.pc_success_ci95
@@ -700,9 +769,14 @@ const SimEvalCard: React.FC<{
                 value={`${overall.n_success}/${overall.n_episodes}`}
               />
               <Metric label="用时" value={fmt(results?.eval_s ?? overall.eval_s, 0, "s")} />
+              <Metric
+                label="实际动作块步数"
+                value={fmt(results?.action_steps, 0)}
+                hint="ACT 每次推理后实际执行的动作步数"
+              />
             </div>
             {overall.env_metrics && (
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 <Metric
                   label="碰撞/集"
                   value={fmt(overall.env_metrics.collisions, 1)}
@@ -718,6 +792,55 @@ const SimEvalCard: React.FC<{
                   value={fmt(overall.env_metrics.cycle_steps, 0)}
                   hint="成功回合的平均步数；无成功时为 0"
                 />
+                <Metric
+                  label="夹爪—球最近距离"
+                  value={fmt(
+                    overall.env_metrics.gripper_ball_min_distance_m == null
+                      ? null
+                      : overall.env_metrics.gripper_ball_min_distance_m * 100,
+                    2,
+                    " cm",
+                  )}
+                  hint="负值表示穿透；接近 0 表示夹爪碰到目标球"
+                />
+                <Metric
+                  label="闭合接触步数/集"
+                  value={fmt(overall.env_metrics.gripper_closing_contact_steps, 1)}
+                  hint="夹爪正在闭合且与目标球接触的步数"
+                />
+                <Metric
+                  label="夹爪最小指令"
+                  value={fmt(overall.env_metrics.gripper_action_min, 1)}
+                  hint="0=完全闭合，100=完全张开"
+                />
+                <Metric
+                  label="最大抬升/集"
+                  value={fmt(
+                    overall.env_metrics.max_lift_m == null
+                      ? null
+                      : overall.env_metrics.max_lift_m * 100,
+                    2,
+                    " cm",
+                  )}
+                  hint="目标球相对 reset 高度的最大抬升"
+                />
+                <Metric
+                  label="最大接触力/集"
+                  value={fmt(overall.env_metrics.gripper_ball_max_force_n, 2, " N")}
+                  hint="夹爪与目标球接触时的最大法向力"
+                />
+                <Metric
+                  label="首次接触步/集"
+                  value={fmt(overall.env_metrics.gripper_ball_first_contact_step, 0)}
+                  hint="0 表示整集没有接触"
+                />
+              </div>
+            )}
+            {results?.grasp_summary && results.grasp_summary.episodes > 0 && (
+              <div className="text-xs text-slate-600 bg-sky-50 border border-sky-200 rounded-lg p-2">
+                抓取阶段：未接触 {results.grasp_summary.no_contact} · 接触未抬{" "}
+                {results.grasp_summary.contact_no_lift} · 夹起后滑落 {results.grasp_summary.slipped} ·
+                抬升成功 {results.grasp_summary.lifted}
               </div>
             )}
             {(results?.videos ?? []).length > 0 && (

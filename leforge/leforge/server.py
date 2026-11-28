@@ -30,7 +30,7 @@ from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconn
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from starlette.datastructures import Headers
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.concurrency import run_in_threadpool
@@ -1608,12 +1608,19 @@ class SimEvalOptions(BaseModel):
     env_hub_path: str = ""
     # Real-rig episodes run ~20 s; the env's own 3600-step default would make
     # every sim episode two minutes long.
-    max_episode_steps: int | None = 600
+    max_episode_steps: int | None = 400
     # Joint-target low-pass in the env (0 = off, 0.9 = very smooth but laggy).
     action_smooth: float = 0.0
     # ACT temporal ensembling coeff; None keeps the checkpoint's open-loop
     # chunk replay. ~0.01 re-predicts every step and averages overlaps.
     temporal_ensemble: float | None = None
+    # ACT action-chunk steps before querying the policy again. After dataset
+    # camera calibration, 20 steps gives useful contact feedback while 5/10 is
+    # too short and 100 is too open-loop for this ACT3 checkpoint.
+    replan_steps: int = Field(default=20, ge=1)
+    # Opt-in kinematic grasp aid for demos only. Assisted runs are labeled and
+    # excluded from checkpoint ranking because they are not pure-policy results.
+    grasp_assist: bool = False
     # none | all | train | holdout — run every scene variant in variants.json
     # (train/holdout split) and aggregate success across them.
     variants: str = "none"

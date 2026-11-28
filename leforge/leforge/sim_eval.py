@@ -179,6 +179,45 @@ def policy_supports_temporal_ensemble(checkpoint_path: str) -> bool:
     except Exception:
         return ptype == "act"
 
+
+def _append_action_replay_flags(
+    cmd: list[str],
+    checkpoint_path: str,
+    replan_steps: int,
+    temporal_ensemble: float | None,
+) -> tuple[int, str]:
+    """Append policy action-replay overrides and return (actual steps, note).
+
+    ACT checkpoints usually store ``n_action_steps=100``. Open-loop evaluation
+    defaults to a 20-step cap so contact feedback can correct the approach;
+    checkpoint values below the cap are preserved. Temporal ensembling is the
+    explicit exception: it queries every step and requires ``n_action_steps=1``.
+    Other policy types keep their checkpoint-native replay behavior.
+    """
+    steps = max(1, int(replan_steps or 20))
+    ptype = _policy_type(checkpoint_path)
+    if temporal_ensemble is not None:
+        if policy_supports_temporal_ensemble(checkpoint_path):
+            cmd.append(f"--policy.temporal_ensemble_coeff={temporal_ensemble}")
+            if ptype == "act":
+                cmd.append("--policy.n_action_steps=1")
+                steps = 1
+        else:
+            message = "该策略未实现时序集成（目前 ACT 支持），本次按 checkpoint 原生动作回放执行"
+            return steps, message
+    elif ptype == "act":
+        # Never lengthen a checkpoint that already replans more often than the
+        # requested cap (for example n_action_steps=1 or 5).
+        try:
+            config = json.loads((Path(checkpoint_path) / "config.json").read_text(encoding="utf-8"))
+            configured = int(config.get("n_action_steps") or steps)
+        except (OSError, json.JSONDecodeError, TypeError, ValueError):
+            configured = steps
+        steps = max(1, min(steps, configured))
+        cmd.append(f"--policy.n_action_steps={steps}")
+    return steps, ""
+
+
 # The tabletop MJCF scene names its cameras top/front/wrist_cam; checkpoints
 # recorded on the real rig use up/side/wrist. Map checkpoint names onto the
 # scene so the env renders exactly the views the policy was trained on.
@@ -207,7 +246,13 @@ def _make_env_kwargs(checkpoint_path: str, env_hub_path: str) -> dict:
                 f"仿真场景没有相机 {name}（可用: top/front/wrist_cam），请换用匹配的环境仓库"
             )
         cameras[name] = target
-    return {"cameras": cameras} if cameras else {}
+    # Camera order is part of the observation contract for this scene. The
+    # checkpoint JSON may list side/up/wrist, while SO101Env and the policy
+    # expect up/side/wrist; preserving JSON order silently swaps image inputs.
+    ordered = {name: cameras[name] for name in ("up", "side", "wrist") if name in cameras}
+    for name in sorted(set(cameras) - set(ordered)):
+        ordered[name] = cameras[name]
+    return {"cameras": ordered} if ordered else {}
 
 
 def _ball_centers_px(rgb) -> dict:
@@ -539,6 +584,8 @@ def run_sim_eval(
     max_episode_steps: int | None = None,
     action_smooth: float = 0.0,
     temporal_ensemble: float | None = None,
+    replan_steps: int = 20,
+    grasp_assist: bool = False,
     cancel_event=None,
     env_extra: dict | None = None,
     variants: str = "none",
@@ -582,6 +629,8 @@ def run_sim_eval(
                 max_episode_steps=max_episode_steps,
                 action_smooth=action_smooth,
                 temporal_ensemble=temporal_ensemble,
+                replan_steps=replan_steps,
+                grasp_assist=grasp_assist,
                 cancel_event=cancel_event,
                 env_extra={"randomize": item.get("randomize") or {}},
                 job_dir=job_dir,
@@ -605,6 +654,8 @@ def run_sim_eval(
             "exit_code": 0 if ok else 1,
             "overall": overall,
             "variants": sub,
+            "grasp_assist": grasp_assist,
+            "ranking_eligible": not grasp_assist,
             "notes": "",
             "run_dir": run_dir.relative_to(job_dir).as_posix(),
         }
@@ -652,19 +703,12 @@ def run_sim_eval(
     ]
     if max_episode_steps:
         cmd.append(f"--eval.max_episode_steps={max_episode_steps}")
-    if temporal_ensemble is not None:
-        # Temporal ensembling is a per-policy capability (ACT today): re-predict
-        # every step and weight-average chunk overlaps. Only pass the flags when
-        # the checkpoint's config defines them; other policies keep their replay.
-        if policy_supports_temporal_ensemble(checkpoint_path):
-            cmd.append(f"--policy.temporal_ensemble_coeff={temporal_ensemble}")
-            # ACT requires n_action_steps=1 when ensembling (query every step).
-            if _policy_type(checkpoint_path) == "act":
-                cmd.append("--policy.n_action_steps=1")
-        else:
-            message = "该策略未实现时序集成（目前 ACT 支持），本次按 checkpoint 原生动作回放执行"
-            notes = f"{notes}；{message}" if notes else message
-            logger.warning("temporal_ensemble requested but unsupported: %s", checkpoint_path)
+    action_steps, action_notes = _append_action_replay_flags(
+        cmd, checkpoint_path, replan_steps, temporal_ensemble
+    )
+    if action_notes:
+        notes = f"{notes}；{action_notes}" if notes else action_notes
+        logger.warning("temporal_ensemble requested but unsupported: %s", checkpoint_path)
     env_kwargs = _make_env_kwargs(checkpoint_path, env_hub_path)
     if max_episode_steps and "so101-tabletop-mujoco" in env_hub_path:
         # Let the env itself truncate at the cap: the recorder only flushes an
@@ -673,6 +717,14 @@ def run_sim_eval(
         env_kwargs["episode_length"] = int(max_episode_steps)
     if action_smooth > 0 and "so101-tabletop-mujoco" in env_hub_path:
         env_kwargs["action_smooth"] = float(action_smooth)
+    if grasp_assist:
+        if "so101-tabletop-mujoco" in env_hub_path:
+            env_kwargs["grasp_assist"] = True
+        else:
+            message = "该环境未实现抓取辅助，本次按纯策略评测执行"
+            notes = f"{notes}；{message}" if notes else message
+            logger.warning("grasp_assist requested but unsupported: %s", env_hub_path)
+            grasp_assist = False
     if env_extra:
         env_kwargs.update(env_extra)
     if env_kwargs:
@@ -745,8 +797,27 @@ def run_sim_eval(
         except Exception as exc:
             logger.error("Sim eval diagnosis failed: %s", exc, exc_info=True)
             diagnostics = {"error": str(exc)}
-        # Per-episode env metrics (collisions, joint-limit violations, success cycle steps).
-        collected: dict[str, list[float]] = {"collisions": [], "limit_violations": [], "cycle_steps": []}
+        # Per-episode env metrics (collisions, limits, success cycle steps and grasp diagnostics).
+        grasp_keys = (
+            "gripper_ball_min_distance_m",
+            "gripper_ball_contact_steps",
+            "gripper_closing_contact_steps",
+            "gripper_ball_first_contact_step",
+            "gripper_ball_max_force_n",
+            "gripper_action_min",
+            "max_lift_m",
+            "grasp_assist_used",
+            "grasp_assist_attached",
+            "grasp_assist_steps",
+            "grasp_assist_attach_step",
+        )
+        collected: dict[str, list[float]] = {
+            "collisions": [],
+            "limit_violations": [],
+            "cycle_steps": [],
+            **{key: [] for key in grasp_keys},
+        }
+        grasp_rows: list[dict[str, float]] = []
         for task in info.get("per_task") or []:
             for row in (task.get("metrics") or {}).get("env_metrics") or []:
                 if not isinstance(row, dict):
@@ -755,9 +826,34 @@ def run_sim_eval(
                     value = row.get(key)
                     if isinstance(value, (int, float)):
                         collected[key].append(float(value))
-        env_metrics = {
-            key: (round(sum(values) / len(values), 2) if values else None) for key, values in collected.items()
+                if any(key in row for key in grasp_keys):
+                    grasp_rows.append({key: float(row.get(key, 0.0) or 0.0) for key in grasp_keys})
+        precision = {
+            "gripper_ball_min_distance_m": 6,
+            "gripper_ball_max_force_n": 3,
+            "gripper_action_min": 2,
+            "max_lift_m": 4,
         }
+        env_metrics = {
+            key: (round(sum(values) / len(values), precision.get(key, 2)) if values else None)
+            for key, values in collected.items()
+        }
+        grasp_summary = {
+            "episodes": len(grasp_rows),
+            "no_contact": 0,
+            "contact_no_lift": 0,
+            "slipped": 0,
+            "lifted": 0,
+        }
+        for row in grasp_rows:
+            if row["max_lift_m"] >= 0.05:
+                grasp_summary["lifted"] += 1
+            elif row["gripper_ball_contact_steps"] <= 0:
+                grasp_summary["no_contact"] += 1
+            elif row["max_lift_m"] >= 0.01:
+                grasp_summary["slipped"] += 1
+            else:
+                grasp_summary["contact_no_lift"] += 1
         overall = dict(info.get("overall") or {})
         overall["env_metrics"] = env_metrics
         return {
@@ -767,6 +863,10 @@ def run_sim_eval(
             "per_group": info.get("per_group", {}),
             "videos": videos,
             "diagnostics": diagnostics,
+            "grasp_summary": grasp_summary,
+            "action_steps": action_steps,
+            "grasp_assist": grasp_assist,
+            "ranking_eligible": not grasp_assist,
             "notes": notes,
             "run_dir": rel_run.as_posix(),
         }
@@ -788,6 +888,8 @@ def run_sim_eval(
             else f"lerobot-eval 退出码 {exit_code}"
         ),
         "log_tail": tail,
+        "grasp_assist": grasp_assist,
+        "ranking_eligible": not grasp_assist,
         "notes": notes,
         "run_dir": rel_run.as_posix(),
     }

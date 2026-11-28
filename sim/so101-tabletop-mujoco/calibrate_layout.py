@@ -10,8 +10,8 @@ one command:
     python calibrate_layout.py --dataset ~/.cache/.../common_1115_1 --episode 0
 
 What is fitted
-  * ``top``/``front``: rotation + fovy, camera position kept from the layout.
-  * ``wrist_cam``: local pose + fovy.
+  * ``top``/``front``: full position + rotation + fovy from plate corners.
+  * ``wrist_cam``: mount offset + rotation + fovy from the wrist ball track.
   * ``arm.joint_offsets_deg``: sim joint zero minus LeRobot zero (5 arm joints).
   * the two ball centers (used only as anchors, not stored).
 
@@ -30,6 +30,7 @@ import argparse
 import glob
 import json
 import sys
+from datetime import date
 from pathlib import Path
 
 import av
@@ -127,42 +128,66 @@ def project(position: np.ndarray, rotation: np.ndarray, fovy: float, point: np.n
 
 
 def fit_camera(position, base_rotation, base_fovy, world_points, pixels, width, height):
-    """Rotation (3) + log fovy (1) with the position held from the layout."""
-    def residual(x):
+    """Fit camera position, rotation and fovy from the dataset plate corners.
+
+    Rotation/fovy are solved first with the established layout orientation as
+    the initializer. Position is then fitted with a strong prior to the known
+    mounting location, followed by a tightly regularized joint refinement.
+    This avoids the degenerate full-PnP solutions that a single planar square
+    can produce while still letting the dataset move the camera.
+    """
+    base_position = np.asarray(position, dtype=float).copy()
+    base_rotation = np.asarray(base_rotation, dtype=float).copy()
+
+    def rotation_residual(x):
         rotation = expmap(x[:3]) @ base_rotation
         fovy = base_fovy * np.exp(np.clip(x[3], -0.6, 0.6))
-        return np.concatenate([project(position, rotation, fovy, p, width, height) - uv for p, uv in zip(world_points, pixels)])
+        return np.concatenate(
+            [project(base_position, rotation, fovy, p, width, height) - uv for p, uv in zip(world_points, pixels)]
+        )
 
-    def solve(x0):
-        x = x0.copy()
-        damping = 1e-2
-        current = float(residual(x) @ residual(x))
-        for _ in range(200):
-            r = residual(x)
-            jac = np.zeros((len(r), 4))
-            for i in range(4):
-                step = x.copy()
-                step[i] += 1e-6
-                jac[:, i] = (residual(step) - r) / 1e-6
-            step = np.linalg.solve(jac.T @ jac + damping * np.diag(np.diag(jac.T @ jac) + 1e-12), -jac.T @ r)
-            trial = x + step
-            cost = float(residual(trial) @ residual(trial))
-            if cost < current:
-                x, current, damping = trial, cost, max(damping / 3, 1e-9)
-            else:
-                damping *= 10
-            if damping > 1e8:
-                break
-        return x, current
+    starts = [
+        np.zeros(4),
+        np.array([0.3, 0, 0, 0.0]),
+        np.array([-0.3, 0, 0, 0.0]),
+        np.array([0, 0.3, 0, 0.0]),
+        np.array([0, -0.3, 0, 0.0]),
+    ]
+    best_rotation = None
+    for start in starts:
+        x, cost = minimize(rotation_residual, start, iterations=200)
+        if np.isfinite(cost) and (best_rotation is None or cost < best_rotation[0]):
+            best_rotation = (cost, x)
+    rotation = expmap(best_rotation[1][:3]) @ base_rotation
+    fovy = base_fovy * np.exp(np.clip(best_rotation[1][3], -0.6, 0.6))
 
-    starts = [np.zeros(4), np.array([0.3, 0, 0, 0.0]), np.array([-0.3, 0, 0, 0.0]),
-              np.array([0, 0.3, 0, 0.0]), np.array([0, -0.3, 0, 0.0])]
-    best = None
-    for x0 in starts:
-        x, cost = solve(x0)
-        if np.isfinite(cost) and (best is None or cost < best[0]):
-            best = (cost, x)
-    return expmap(best[1][:3]) @ base_rotation, base_fovy * np.exp(np.clip(best[1][3], -0.6, 0.6)), best[0]
+    def projection_residual(cam_position, cam_rotation, cam_fovy):
+        return np.concatenate(
+            [project(cam_position, cam_rotation, cam_fovy, p, width, height) - uv for p, uv in zip(world_points, pixels)]
+        )
+
+    def position_residual(cam_position):
+        return np.r_[projection_residual(cam_position, rotation, fovy), 50.0 * (cam_position - base_position)]
+
+    cam_position, _ = minimize(position_residual, base_position, iterations=160)
+
+    def joint_residual(x):
+        pos = x[:3]
+        rot = expmap(x[3:6]) @ rotation
+        fov = fovy * np.exp(np.clip(x[6], -0.3, 0.3))
+        return np.r_[
+            projection_residual(pos, rot, fov),
+            200.0 * (pos - base_position),
+            10.0 * x[3:6],
+            0.2 * (fov - fovy),
+        ]
+
+    x, _ = minimize(joint_residual, np.r_[cam_position, np.zeros(3), 0.0], iterations=160)
+    cam_position = x[:3]
+    rotation = expmap(x[3:6]) @ rotation
+    fovy = fovy * np.exp(np.clip(x[6], -0.3, 0.3))
+    corner_residual = projection_residual(cam_position, rotation, fovy)
+    return cam_position, rotation, fovy, float(corner_residual @ corner_residual)
 
 
 def minimize(residual, x0, iterations=80):
@@ -196,6 +221,8 @@ def minimize(residual, x0, iterations=80):
 def main() -> None:
     args = parse_args()
     layout = json.loads(args.layout.read_text(encoding="utf-8-sig"))
+    layout.setdefault("source", {})["episode"] = args.episode
+    layout["source"]["updated"] = date.today().isoformat()
     root = Path(args.dataset).expanduser()
     states = load_episode_rows(root, args.episode)
     layout_view = layout.get("calibration") or {}
@@ -211,7 +238,7 @@ def main() -> None:
 
     def camera_state(name):
         cid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_CAMERA, name)
-        return cid, world.data.cam_xpos[cid].copy(), world.data.cam_xmat[cid].reshape(3, 3).copy(), model.cam_fovy[cid]
+        return cid, world.data.cam_xpos[cid].copy(), world.data.cam_xmat[cid].reshape(3, 3).copy(), float(model.cam_fovy[cid])
 
     # plate world corners from the layout
     center = layout["plate"]["center_user_cm"]
@@ -225,19 +252,29 @@ def main() -> None:
     ])
 
     # 1. fixed cameras from the plate corners
+    camera_residuals = {}
     for view, cam_name in (("up", "top"), ("side", "front")):
         pixels = np.asarray(anchors["plate_corners_px"][view], dtype=float)
         order = anchors["plate_corner_order"][view]
         _, position, rotation, fovy = camera_state(cam_name)
-        rotation, fovy, cost = fit_camera(position, rotation, fovy, [plate[i] for i in order], pixels, width, height)
+        position, rotation, fovy, cost = fit_camera(
+            position, rotation, fovy, [plate[i] for i in order], pixels, width, height
+        )
         cid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_CAMERA, cam_name)
         model.cam_pos[cid] = position
         quat = np.zeros(4)
         mujoco.mju_mat2Quat(quat, rotation.flatten())
         model.cam_quat[cid] = quat
         model.cam_fovy[cid] = fovy
-        layout["cameras"][cam_name] = {"pos": position.tolist(), "quat": quat.tolist(), "fovy": float(fovy)}
-        print(f"{cam_name}: fovy {fovy:.1f}  corner rms {np.sqrt(cost / 8):.2f}px")
+        previous = layout.get("cameras", {}).get(cam_name, {})
+        layout["cameras"][cam_name] = {
+            "pos": position.tolist(),
+            "quat": quat.tolist(),
+            "fovy": float(fovy),
+            **({"hflip": bool(previous["hflip"])} if "hflip" in previous else {}),
+        }
+        camera_residuals[cam_name] = float(np.sqrt(cost / 8))
+        print(f"{cam_name}: pos {np.round(position, 4).tolist()}  fovy {fovy:.1f}  corner rms {np.sqrt(cost / 8):.2f}px")
 
     mujoco.mj_forward(model, world.data)
     _, top_position, top_rotation, top_fovy = camera_state("top")
@@ -268,6 +305,9 @@ def main() -> None:
         raise SystemExit("not enough wrist frames with a visible red ball")
     ball_radius = float((layout.get("balls") or {}).get("radius_cm", 2.6)) / 100.0
     wrist_cid, wrist_pos, wrist_rot, wrist_fovy = camera_state("wrist_cam")
+    # Start from the layout's joint offsets and keep only a weak prior; the
+    # dataset wrist track then adjusts the mount and arm zeros together.
+    base_offsets = np.asarray((layout.get("arm") or {}).get("joint_offsets_deg", [0] * 6)[:5], dtype=float)
 
     def residual(x):
         wpos, wrv, wf, red_xy, blue_xy, offsets = x[:3], x[3:6], x[6], x[7:9], x[9:11], x[11:16]
@@ -297,6 +337,8 @@ def main() -> None:
                 f = (height / 2) / np.tan(np.radians(fovy) / 2)
                 uv = np.array([width / 2 + f * pc[0] / (-pc[2]), height / 2 - f * pc[1] / (-pc[2])])
                 out += [uv[0] - u, uv[1] - v, 0.5 * (f * ball_radius / np.linalg.norm(red - cam) - r)]
+        out += list(5.0 * wrv)
+        out += [1.0 * (fovy - wrist_fovy)]
         out += list(0.35 * offsets)
         return np.array(out)
 
@@ -309,8 +351,7 @@ def main() -> None:
     red_world = backproject(top_position, top_rotation, top_fovy, ball_pixels["up"]["red"][:2], ball_radius)
     blue_world = backproject(top_position, top_rotation, top_fovy,
                              ball_pixels["up"].get("blue", ball_pixels["up"]["red"])[:2], ball_radius)
-    x0 = np.r_[wrist_pos, np.zeros(3), 0.0, red_world[:2], blue_world[:2],
-               (layout.get("arm") or {}).get("joint_offsets_deg", [0] * 6)[:5]]
+    x0 = np.r_[wrist_pos, np.zeros(3), 0.0, red_world[:2], blue_world[:2], base_offsets]
     best = None
     rng = np.random.default_rng(0)
     for trial in range(8):
@@ -328,9 +369,16 @@ def main() -> None:
     fovy = wrist_fovy * np.exp(np.clip(wf, -0.4, 0.4))
     quat = np.zeros(4)
     mujoco.mju_mat2Quat(quat, (expmap(wrv) @ wrist_rot).flatten())
-    layout["cameras"]["wrist_cam"] = {"pos": wpos.tolist(), "quat": quat.tolist(), "fovy": float(fovy)}
+    previous_wrist = layout.get("cameras", {}).get("wrist_cam", {})
+    layout["cameras"]["wrist_cam"] = {
+        "pos": wpos.tolist(),
+        "quat": quat.tolist(),
+        "fovy": float(fovy),
+        **({"hflip": bool(previous_wrist["hflip"])} if "hflip" in previous_wrist else {}),
+    }
     layout["arm"]["joint_offsets_deg"] = offsets.tolist() + [0.0]
     layout["calibration"]["residual_px"] = float(np.sqrt(best[0] / len(residual(x))))
+    layout["calibration"]["camera_corner_rms_px"] = camera_residuals
     layout["calibration"]["status"] = "auto-calibrated by calibrate_layout.py"
     args.layout.write_text(json.dumps(layout, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     print(f"wrist_cam: fovy {fovy:.1f}  pos {np.round(wpos, 4).tolist()}")

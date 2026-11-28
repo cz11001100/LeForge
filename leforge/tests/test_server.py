@@ -64,6 +64,19 @@ def test_health_endpoint_returns_dict(client: TestClient) -> None:
     assert isinstance(body, dict)
 
 
+def test_sim_eval_options_default_replan_and_validate_positive() -> None:
+    from pydantic import ValidationError
+
+    from leforge.server import SimEvalOptions
+
+    assert SimEvalOptions().replan_steps == 20
+    assert SimEvalOptions().max_episode_steps == 400
+    assert SimEvalOptions(replan_steps=7).replan_steps == 7
+    assert SimEvalOptions().grasp_assist is False
+    with pytest.raises(ValidationError):
+        SimEvalOptions(replan_steps=0)
+
+
 def test_unknown_route_returns_404(client: TestClient) -> None:
     response = client.get("/this-does-not-exist")
     assert response.status_code == 404

@@ -134,8 +134,8 @@ def test_sim_eval_camera_aliases(tmp_path: Path) -> None:
             {
                 "input_features": {
                     "observation.state": {},
-                    "observation.images.up": {},
                     "observation.images.side": {},
+                    "observation.images.up": {},
                     "observation.images.wrist": {},
                 }
             }
@@ -143,6 +143,7 @@ def test_sim_eval_camera_aliases(tmp_path: Path) -> None:
     )
     kwargs = _make_env_kwargs(str(ckpt), "lerobot/so101-tabletop-mujoco")
     assert kwargs == {"cameras": {"up": "top", "side": "front", "wrist": "wrist_cam"}}
+    assert list(kwargs["cameras"]) == ["up", "side", "wrist"]
     # Other env repos get no tabletop-specific mapping.
     assert _make_env_kwargs(str(ckpt), "someone/other-env") == {}
 
@@ -169,3 +170,121 @@ def test_sim_eval_parse_progress(tmp_path: Path) -> None:
     )
     assert parse_progress(log) == {"batches_done": 390, "batches_total": 600}
     assert parse_progress(tmp_path / "missing.txt") is None
+
+
+def _checkpoint(tmp_path: Path, policy_type: str) -> str:
+    checkpoint = tmp_path / policy_type
+    checkpoint.mkdir()
+    (checkpoint / "config.json").write_text(json.dumps({"type": policy_type}))
+    return str(checkpoint)
+
+
+def test_sim_eval_act_defaults_to_twenty_step_replan(tmp_path: Path) -> None:
+    from leforge.sim_eval import _append_action_replay_flags
+
+    cmd: list[str] = []
+    steps, note = _append_action_replay_flags(cmd, _checkpoint(tmp_path, "act"), 20, None)
+    assert steps == 20
+    assert note == ""
+    assert cmd == ["--policy.n_action_steps=20"]
+
+
+def test_sim_eval_act_replan_never_lengthens_checkpoint_queue(tmp_path: Path) -> None:
+    from leforge.sim_eval import _append_action_replay_flags
+
+    checkpoint = Path(_checkpoint(tmp_path, "act"))
+    (checkpoint / "config.json").write_text(json.dumps({"type": "act", "n_action_steps": 5}))
+    cmd: list[str] = []
+    steps, note = _append_action_replay_flags(cmd, str(checkpoint), 20, None)
+    assert steps == 5
+    assert note == ""
+    assert cmd == ["--policy.n_action_steps=5"]
+
+
+def test_sim_eval_act_temporal_ensemble_forces_single_step(tmp_path: Path, monkeypatch) -> None:
+    from leforge import sim_eval
+
+    monkeypatch.setattr(sim_eval, "policy_supports_temporal_ensemble", lambda _path: True)
+    cmd: list[str] = []
+    steps, note = sim_eval._append_action_replay_flags(cmd, _checkpoint(tmp_path, "act"), 20, 0.01)
+    assert steps == 1
+    assert note == ""
+    assert cmd == ["--policy.temporal_ensemble_coeff=0.01", "--policy.n_action_steps=1"]
+
+
+def test_sim_eval_non_act_keeps_native_replay(tmp_path: Path) -> None:
+    from leforge.sim_eval import _append_action_replay_flags
+
+    cmd: list[str] = []
+    steps, note = _append_action_replay_flags(cmd, _checkpoint(tmp_path, "tdmpc"), 20, None)
+    assert steps == 20
+    assert note == ""
+    assert cmd == []
+
+
+def test_sim_eval_grasp_assist_is_labeled_and_not_rankable(tmp_path: Path, monkeypatch) -> None:
+    from leforge import sim_eval
+
+    checkpoint = _checkpoint(tmp_path, "act")
+    run_dir = tmp_path / "job" / "sim_eval" / "run"
+    captured: list[str] = []
+
+    class FakeProc:
+        pid = 123
+        returncode = 0
+
+        def poll(self):
+            return 0
+
+    def fake_popen(cmd, **kwargs):
+        captured.extend(cmd)
+        cwd = Path(kwargs["cwd"])
+        (cwd / "eval_info.json").write_text(
+            json.dumps(
+                {
+                    "overall": {"pc_success": 100.0, "n_episodes": 1, "n_success": 1},
+                    "per_task": [
+                        {
+                            "metrics": {
+                                "env_metrics": [
+                                    {
+                                        "collisions": 0.0,
+                                        "limit_violations": 0.0,
+                                        "cycle_steps": 2.0,
+                                        "gripper_ball_min_distance_m": -0.001,
+                                        "gripper_ball_contact_steps": 2.0,
+                                        "gripper_closing_contact_steps": 1.0,
+                                        "gripper_ball_first_contact_step": 1.0,
+                                        "gripper_ball_max_force_n": 3.0,
+                                        "gripper_action_min": 0.0,
+                                        "max_lift_m": 0.06,
+                                        "grasp_assist_used": 1.0,
+                                        "grasp_assist_attached": 1.0,
+                                        "grasp_assist_steps": 1.0,
+                                        "grasp_assist_attach_step": 1.0,
+                                    }
+                                ]
+                            }
+                        }
+                    ],
+                }
+            )
+        )
+        return FakeProc()
+
+    monkeypatch.setattr(sim_eval.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(sim_eval, "diagnose_recordings", lambda *_args: {})
+    result = sim_eval.run_sim_eval(
+        checkpoint_path=checkpoint,
+        run_dir=str(run_dir),
+        env_hub_path=str(tmp_path / "so101-tabletop-mujoco"),
+        n_episodes=1,
+        max_episode_steps=2,
+        grasp_assist=True,
+    )
+    assert "--policy.n_action_steps=20" in captured
+    env_arg = next(arg for arg in captured if arg.startswith("--env.make_env_kwargs="))
+    assert json.loads(env_arg.split("=", 1)[1])["grasp_assist"] is True
+    assert result["grasp_assist"] is True
+    assert result["ranking_eligible"] is False
+    assert result["grasp_summary"]["lifted"] == 1

@@ -2541,9 +2541,10 @@ print(json.dumps(out))
         """Closed-loop simulation evaluation of a local checkpoint.
 
         Options: ``step``, ``n_episodes``, ``batch_size``, ``seed``,
-        ``env_hub_path``, ``max_episode_steps``. Runs lerobot-eval in a
-        subprocess (MuJoCo renders on the local X display); only local and
-        imported jobs qualify — SSH/cloud checkpoints must be exported first.
+        ``env_hub_path``, ``max_episode_steps``, ``replan_steps``. Runs
+        lerobot-eval in a subprocess (MuJoCo renders on the local X display);
+        only local and imported jobs qualify — SSH/cloud checkpoints must be
+        exported first.
         """
         from .sim_eval import resolve_env_path
 
@@ -2590,6 +2591,8 @@ print(json.dumps(out))
             "max_episode_steps": opts.get("max_episode_steps") or None,
             "action_smooth": float(opts.get("action_smooth", 0) or 0),
             "temporal_ensemble": opts.get("temporal_ensemble"),
+            "replan_steps": max(1, int(opts.get("replan_steps", 20) or 20)),
+            "grasp_assist": bool(opts.get("grasp_assist", False)),
             "variants": str(opts.get("variants") or "none"),
         }
         started_at = time.time()
@@ -2600,7 +2603,7 @@ print(json.dumps(out))
             results["ts"] = started_at
             results["eval_s"] = round(time.time() - started_at, 1)
             cancelled = bool(results.get("cancelled"))
-            if results.get("success"):
+            if results.get("success") and results.get("ranking_eligible", True):
                 self._append_sim_eval_history(job_id, results)
             with self._lock:
                 rec = self._records.get(job_id)

@@ -888,7 +888,22 @@ export interface SimEvalOverall {
     collisions?: number | null;
     limit_violations?: number | null;
     cycle_steps?: number | null;
+    gripper_ball_min_distance_m?: number | null;
+    gripper_ball_contact_steps?: number | null;
+    gripper_closing_contact_steps?: number | null;
+    gripper_ball_first_contact_step?: number | null;
+    gripper_ball_max_force_n?: number | null;
+    gripper_action_min?: number | null;
+    max_lift_m?: number | null;
   };
+}
+
+export interface SimEvalGraspSummary {
+  episodes: number;
+  no_contact: number;
+  contact_no_lift: number;
+  slipped: number;
+  lifted: number;
 }
 
 export interface SimEvalDiagnostics {
@@ -920,6 +935,10 @@ export interface SimEvalResults {
   per_group?: Record<string, unknown>;
   videos?: string[];
   diagnostics?: SimEvalDiagnostics;
+  grasp_summary?: SimEvalGraspSummary;
+  action_steps?: number;
+  grasp_assist?: boolean;
+  ranking_eligible?: boolean;
   notes?: string;
   variants?: { name: string; split: string; result: SimEvalResults }[];
   run_dir?: string;
@@ -945,6 +964,8 @@ export interface SimEvalOptions {
   max_episode_steps?: number | null;
   action_smooth?: number;
   temporal_ensemble?: number | null;
+  replan_steps?: number;
+  grasp_assist?: boolean;
   variants?: string;
 }
 
